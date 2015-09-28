@@ -82,6 +82,8 @@ class InputParser {
             if (x0 == -1) {
                 current.clear(i);
             } else {
+                System.err.println("Moving: " + i + " to: (" + x1 + ", " + y1 + ")");
+                // Board counts players starting at 1.
                 current.move(i, x1, y1);
             }
         }
@@ -92,48 +94,72 @@ class Board {
     public final int US;
     public final int width;
     public final int height;
+    // Zero marks empty tiles;
+    public static final int EMPTY = -2;
     private int[] floor;
-    private int[] playerPos;
+    private int[] playerTile;
 
     public Board(int width, int height, int playerCount, int us) {
         this.width = width;
         this.height = height;
         floor = new int[width * height];
-        playerPos = new int[playerCount];
+        for(int i = 0; i < floor.length; i++) {
+            floor[i] = EMPTY;
+        }
+        playerTile = new int[playerCount];
         US = us;
     }
 
     public int getPlayerCount() {
-        return playerPos.length;
+        return playerTile.length;
     }
 
     public void clear(int player) {
         for (int i = 0; i < floor.length; i++) {
             if (floor[i] == player) {
-                floor[i] = 0;
+                floor[i] = EMPTY;
             }
         }
+    }
+
+    public int playerTile(int player) {
+        return playerTile[player];
+    }
+
+    public int ourTile() {
+        return playerTile[this.US];
+    }
+
+    public int getTileValue(int tile) {
+        return floor[tile];
     }
 
     public void move(int player, int x, int y) {
         // Could calculate history of moves here.
         int tile = xyToTile(x, y);
-        playerPos[player] = tile;
+        playerTile[player] = tile;
+        System.err.printf("Player %d moving to (%d, %d) aka %d\n", player, x, y, tile);
         floor[tile] = player;
     }
 
     public boolean isValid(int x, int y) {
-        return x >= 0 && x < width && y >= 0 && y < height;
+        boolean isValid = x >= 0 && x < width && y >= 0 && y < height;
+        return isValid;
     }
 
     public boolean isValid(Position p) {
         return isValid(p.getX(), p.getY());
     }
 
+    public boolean isFree(int tile) {
+        return getTileValue(tile) == EMPTY;
+    }
+
     public int tileFrom(int tile, Direction d) {
         Position now = tileToPos(tile);
         Position next = new Position(now.getX() + d.getDx(), now.getY() + d.getDy());
         if (!isValid(next)) {
+            System.err.printf("Invalid tile: %d", tile);
             return -1;
         }
         return posToTile(next);
@@ -171,7 +197,11 @@ class Board {
     }
 
     public int xyToTile(int x, int y) {
-        return floor[x + height * y];
+        if(!isValid(x, y)) {
+            throw new IndexOutOfBoundsException();
+        }
+        int tile = x + width * y;
+        return tile;
     }
 
     public int posToTile(Position p) {
@@ -214,7 +244,10 @@ class StaySafeDriver implements Driver {
         // Choose a default in case there are no safe directions.
         Direction direction = Direction.LEFT;
         for (Direction d : Direction.values()) {
-            if (board.tileFrom(board.US, d) != -1) {
+            int neighbourTile = board.tileFrom(board.ourTile(), d);
+            boolean isValid = neighbourTile != -1;
+            if(isValid && board.isFree(neighbourTile)) {
+                System.err.print("Moving to the " + d);
                 direction = d;
                 break;
             }
