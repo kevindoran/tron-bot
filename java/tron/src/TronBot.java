@@ -6,7 +6,8 @@ class Player {
         int width = 30;
         int height = 20;
 //        Driver driver = new DeadDriver();
-        Driver driver = new StaySafeDriver();
+//        Driver driver = new StaySafeDriver();
+        Driver driver  = new WallHuggingDriver();
         InputParser p = new InputParser();
         Board board = p.init(width, height);
         while (true) {
@@ -238,6 +239,7 @@ class DeadDriver implements Driver {
     }
 }
 
+// Places around 700
 class StaySafeDriver implements Driver {
     @Override
     public Direction move(Board board) {
@@ -253,5 +255,27 @@ class StaySafeDriver implements Driver {
             }
         }
         return direction;
+    }
+}
+
+class WallHuggingDriver implements Driver {
+    private StaySafeDriver backupDriver = new StaySafeDriver();
+
+    @Override
+    public Direction move(Board board) {
+        Direction direction;
+        for(Direction d : Direction.values()) {
+            int tile = board.tileFrom(board.ourTile(), d);
+            boolean isValid = tile != -1;
+            if (isValid && board.isFree(tile)) {
+                Set<Integer> neighbours = board.neighbours(tile);
+                if (neighbours.size() < 3) {
+                    // It's next to a wall!
+                    return d;
+                }
+            }
+        }
+        // No free wall tiles. Revert to StaySafeDriver.
+        return backupDriver.move(board);
     }
 }
