@@ -1,6 +1,6 @@
 package co.kevindoran.tron;
 
-import java.util.Scanner;
+import java.util.*;
 
 class TronBot {
 
@@ -17,28 +17,32 @@ class TronBot {
         }
     }
 
-    private static enum Direction {
+    private enum Direction {
         RIGHT(1, 0),
         LEFT(-1, 0),
         UP(0, -1),
         DOWN(0, 1);
 
-        private int x;
-        private int y;
+        private int dx;
+        private int dy;
 
-        private Direction(int xDir, int yDir) {
-            x = xDir;
-            y = xDir;
+        Direction(int dx, int dy) {
+            this.dx = dx;
+            this.dy = dy;
+        }
+
+        public int getDx() {
+            return dx;
+        }
+
+        public int getDy() {
+            return dy;
         }
 
         @Override
         public String toString() {
             return this.name();
         }
-    }
-
-    private static interface Driver {
-        Direction move(Board board);
     }
 
     private static class InputParser {
@@ -105,7 +109,9 @@ class TronBot {
 
         private void clear(int player) {
             for (int i = 0; i < floor.length; i++) {
-                floor[i] = 0;
+                if(floor[i] == player) {
+                    floor[i] = 0;
+                }
             }
         }
 
@@ -114,6 +120,54 @@ class TronBot {
             int tile = xyToTile(x, y);
             playerPos[player] = tile;
             floor[tile] = player;
+        }
+
+        private boolean isValid(int x, int y) {
+            return x >= 0 && x < width && y >= 0 && y < height;
+        }
+
+        private boolean isValid(Position p) {
+            return isValid(p.getX(), p.getY());
+        }
+
+        private int tileFrom(int tile, Direction d) {
+            Position now = tileToPos(tile);
+            Position next = new Position(now.getX() + d.getDx(), now.getY() + d.getDy());
+            if (!isValid(next)) {
+                return -1;
+            }
+            return posToTile(next);
+        }
+
+        private Set<Integer> neighbours(int tile) {
+            Position pos = tileToPos(tile);
+            return neighbours(pos.getX(), pos.getY());
+        }
+
+        private Set<Integer> neighbours(int x, int y) {
+            Set<Integer> neighbours = new HashSet<>();
+            if(x - 1 >= 0) {
+                neighbours.add(xyToTile(x - 1, y));
+            }
+            if(x + 1 < width) {
+                neighbours.add(xyToTile(x + 1, y));
+            }
+            if(y - 1 >= 0) {
+                neighbours.add(xyToTile(x, y - 1));
+            }
+            if(y + 1 < height) {
+                neighbours.add(xyToTile(x, y + 1));
+            }
+            return neighbours;
+        }
+
+        private Position tileToPos(int tile) {
+            if(tile > width*height - 1) {
+                throw new IndexOutOfBoundsException();
+            }
+            int x = tile % width;
+            int y = tile / width;
+            return new Position(x, y);
         }
 
         private int xyToTile(int x, int y) {
@@ -143,10 +197,29 @@ class TronBot {
         }
     }
 
+    private interface Driver {
+        Direction move(Board board);
+    }
+
     private static class DeadDriver implements Driver {
         @Override
         public Direction move(Board board) {
             return Direction.LEFT;
+        }
+    }
+
+    private static class StaySafeDriver implements Driver {
+        @Override
+        public Direction move(Board board) {
+            // Choose a default in case there are no safe directions.
+            Direction direction = Direction.LEFT;
+            for(Direction d : Direction.values()) {
+                if(board.tileFrom(board.US, d) != -1) {
+                    direction = d;
+                    break;
+                }
+            }
+            return direction;
         }
     }
 }
