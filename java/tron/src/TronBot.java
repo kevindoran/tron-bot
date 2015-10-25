@@ -1,5 +1,6 @@
 import java.util.*;
 
+// Everything must be in the same file for- submission.
 class Player {
 
     public static void main(String[] args) {
@@ -7,7 +8,7 @@ class Player {
         int height = 20;
 //        Driver driver = new DeadDriver();
 //        Driver driver = new StaySafeDriver();
-        Driver driver  = new WallHuggingDriver();
+        Driver driver  = new Voronoi();
         InputParser p = new InputParser();
         Board board = p.init(width, height);
         while (true) {
@@ -30,6 +31,19 @@ enum Direction {
     Direction(int dx, int dy) {
         this.dx = dx;
         this.dy = dy;
+    }
+
+    public static Direction toDirection(int dx, int dy) {
+        assert Math.abs(dx) <= 1 && Math.abs(dy) <= 1;
+        if(dx == 1 && dy == 0) {
+            return RIGHT;
+        } else if(dx == -1 && dy == 0) {
+            return LEFT;
+        } else if (dx == 0 && dy == 1) {
+            return DOWN;
+        } else {
+            return UP;
+        }
     }
 
     public int getDx() {
@@ -88,6 +102,65 @@ class InputParser {
                 current.move(i, x1, y1);
             }
         }
+    }
+}
+
+class BoardUtil {
+    public static boolean[] battlefield(Board b) {
+        boolean[] battlefield = new boolean[b.height*b.width];
+        int[][] playerDistances = playerDistances(b);
+        int battlefieldCount = 0;
+        for(int i = 0; i < b.width*b.height; i++) {
+            if(!b.isFree(i)) {
+                continue;
+            }
+            int ourDist = playerDistances[b.US][i];
+            for(int p = 0; p < b.getPlayerCount(); p++) {
+                if(p == b.US) continue;
+                // Zero distance means it is not possible to reach that position.
+                if(ourDist == 0 || playerDistances[p][i] == 0) {
+                    continue;
+                }
+                // If the player distances are the same or differ by one. The difference of one is needed when
+                // the players are on opposite type squares (imagine a checker board), then there are no squares they
+                // can both reach in the same number of moves.
+                if(Math.abs(ourDist - playerDistances[p][i]) <= 1) {
+                    battlefieldCount++;
+                    battlefield[i] = true;
+                }
+            }
+        }
+        if(battlefieldCount == 0) {
+            return null;
+        }
+        return battlefield;
+    }
+
+    public static int[][] playerDistances(Board b) {
+        int[][] playerDistances = new int[b.getPlayerCount()][b.width*b.height];
+        for(int p = 0; p < b.getPlayerCount(); p++) {
+            playerDistances[p] = getDistancesFrom(b, p);
+        }
+        return playerDistances;
+    }
+
+    public static int[] getDistancesFrom(Board b, int player) {
+        int[] distances = new int[b.height*b.width];
+        Queue<Integer> q = new LinkedList<>();
+        q.add(b.playerTile(player));
+        while(!q.isEmpty()) {
+            int next = q.poll();
+            for(int n : b.neighbours(next)) {
+                if(!b.isFree(n)) {
+                    continue;
+                }
+                if(distances[n] == 0) {
+                    distances[n] = distances[next] + 1;
+                    q.add(n);
+                }
+            }
+        }
+        return distances;
     }
 }
 
@@ -219,6 +292,13 @@ class Position {
         this.y = y;
     }
 
+    public Direction directionTo(Position p) {
+        assert Math.abs(this.x - p.x) <= 1 && Math.abs(this.y - p.y) <= 1;
+        int dx = p.getX() - this.x;
+        int dy = p.getY() - this.y;
+        return Direction.toDirection(dx, dy);
+    }
+
     public int getX() {
         return x;
     }
@@ -258,6 +338,15 @@ class StaySafeDriver implements Driver {
     }
 }
 
+class ChooseTheBiggerSliceDriver implements Driver {
+
+    @Override
+    public Direction move(Board board) {
+        // TODO
+        return Direction.DOWN;
+    }
+}
+
 class WallHuggingDriver implements Driver {
     private StaySafeDriver backupDriver = new StaySafeDriver();
 
@@ -277,5 +366,64 @@ class WallHuggingDriver implements Driver {
         }
         // No free wall tiles. Revert to StaySafeDriver.
         return backupDriver.move(board);
+    }
+}
+
+
+class Voronoi implements Driver {
+    private Driver backupDriver = new WallHuggingDriver();
+    private boolean backupEnabled = false;
+    @Override
+    public Direction move(Board board) {
+        List<Integer> path = pathToBattle(board);
+        if(backupEnabled || path.size() == 0) {
+            System.err.println("Backup enabled");
+            backupEnabled = true;
+            return backupDriver.move(board);
+        }
+        Position nextPoint = board.tileToPos(path.get(0));
+        Direction move =  board.tileToPos(board.ourTile()).directionTo(nextPoint);
+        return move;
+    }
+
+    // Depth first search is currently done a second time in this algorithm. Room for improvement.
+    public List<Integer> pathToBattle(Board board) {
+        boolean[] marked = new boolean[board.height*board.width];
+        int[] pathTo = new int[board.height*board.width];
+        List<Integer> pathToBF = new ArrayList<>();
+        Queue<Integer> queue = new LinkedList<>();
+        boolean[] battlefield = BoardUtil.battlefield(board);
+        if(battlefield == null) {
+            return pathToBF;
+        }
+        marked[board.ourTile()] = true;
+        queue.add(board.ourTile());
+        int closestBattlefield = -1;
+        while(!queue.isEmpty()) {
+            int next = queue.poll();
+            for(int n : board.neighbours(next)) {
+                if(!board.isFree(n)) {
+                    continue;
+                }
+                if(!marked[n]) {
+                    marked[n] = true;
+                    pathTo[n] = next;
+                    if(battlefield[n]) {
+                        closestBattlefield = n;
+                        break;
+                    }
+                    queue.add(n);
+                }
+            }
+            if(closestBattlefield != -1) {
+                break;
+            }
+        }
+        assert closestBattlefield != -1;
+        for(int i = closestBattlefield; i != board.ourTile(); i = pathTo[i]) {
+            pathToBF.add(i);
+        }
+        Collections.reverse(pathToBF);
+        return pathToBF;
     }
 }
