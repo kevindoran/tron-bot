@@ -1,4 +1,5 @@
 import java.util.*;
+import java.util.stream.Collectors;
 
 // Everything must be in the same file for- submission.
 class Player {
@@ -13,6 +14,8 @@ class Player {
         Board board = p.init(width, height);
         while (true) {
             Direction nextMove = driver.move(board);
+            int tile = board.tileFrom(board.ourTile(), nextMove);
+            assert board.isFree(tile);
             System.out.println(nextMove.toString());
             p.update(board);
         }
@@ -93,6 +96,10 @@ class InputParser {
             int y0 = in.nextInt();
             int x1 = in.nextInt();
             int y1 = in.nextInt();
+            // People may have already moved since your turn, so best to mark their origins before moving them again.
+            if (startup) {
+                current.move(i, x0, y0);
+            }
             // A player is dead if it has -1 for a coordinate.
             if (x0 == -1) {
                 current.clear(i);
@@ -352,15 +359,23 @@ class StaySafeDriver implements Driver {
     }
 }
 
-class ChooseTheBiggestCCDriver implements Driver {
+interface Filter {
+    Set<Direction> filterBadMoves(Board b, Set<Direction> moves);
+}
+
+class AvoidSmallComponents implements Filter {
 
     @Override
-    public Direction move(Board board) {
+    public Set<Direction> filterBadMoves(Board board, Set<Direction> moves) {
         int[] connectedComponents = new int[board.width*board.height];
         Map<Integer, Integer> componentSize = new HashMap<>();
         componentSize.put(0, 0);
+        int maxComponentSize = 0;
         int ccID = 1;
-        for(int i = 0; i <connectedComponents.length; i++) {
+        Set<Integer> possibleNeighbours = moves.stream().map(
+                (m) -> board.tileFrom(board.ourTile(), m)).filter(
+                (tile) -> tile != -1).collect(Collectors.toSet());
+        for(int i : possibleNeighbours) {
             if (board.isFree(i) && connectedComponents[i] == 0) {
                 Queue<Integer> queue = new LinkedList<>();
                 componentSize.put(ccID, 0);
@@ -377,36 +392,24 @@ class ChooseTheBiggestCCDriver implements Driver {
                     }
                 }
                 assert  componentSize.get(ccID) != 0;
+                if(componentSize.get(ccID) > maxComponentSize) {
+                    maxComponentSize = componentSize.get(ccID);
+                }
                 ccID++;
             }
         }
-        Set<Integer> neighbours = board.freeNeighbours(board.ourTile());
-        boolean sameComponent = true;
-        int component = -1;
-        for(int n : neighbours) {
-            if(component == -1) {
-                component = connectedComponents[n];
-            } else if(connectedComponents[n] != component) {
-                sameComponent = false;
-                break;
+        // Lambdas require variables to be declared final.
+        final int maxSize = maxComponentSize;
+        moves = moves.stream().filter((e) ->  {
+            int toTile = board.tileFrom(board.ourTile(), e);
+            // The tile is not on the board if toTile == -1.
+            if(toTile == -1) {
+                return false;
             }
-        }
-        // If there is only 1 component, this driver can't choose.
-        if(sameComponent) {
-            return null;
-        }
-        else {
-            int bestMove = -1;
-            int largestCC = -1;
-            for (int n : board.freeNeighbours(board.ourTile())) {
-                int ccSize = componentSize.get(connectedComponents[n]);
-                if (board.isFree(n) && ccSize > largestCC) {
-                    bestMove = n;
-                    largestCC = ccSize;
-                }
-            }
-            return board.tileToPos(board.ourTile()).directionTo(board.tileToPos(bestMove));
-        }
+            boolean inLargestComponent = componentSize.get(connectedComponents[toTile]) == maxSize;
+            return inLargestComponent;
+        }).collect(Collectors.toSet());
+        return moves;
     }
 }
 
@@ -434,15 +437,14 @@ class WallHuggingDriver implements Driver {
 
 class Voronoi implements Driver {
     private Driver backupDriver = new WallHuggingDriver();
-    private Driver connectedComponentChooser = new ChooseTheBiggestCCDriver();
+    private Filter connectedComponentChooser = new AvoidSmallComponents();
     private boolean backupEnabled = false;
+    private Random rand = new Random();
     @Override
     public Direction move(Board board) {
-        Direction move = connectedComponentChooser.move(board);
-        if(move != null) {
-            System.err.println("Component chooser driver.");
-            return move;
-        }
+        Set<Direction> allDirections = new HashSet<>();
+        Collections.addAll(allDirections, Direction.values());
+        Set<Direction> directions = connectedComponentChooser.filterBadMoves(board, allDirections);
         List<Integer> path = pathToBattle(board);
         if(backupEnabled || path.size() == 0) {
             System.err.println("Backup enabled");
@@ -450,7 +452,10 @@ class Voronoi implements Driver {
             return backupDriver.move(board);
         }
         Position nextPoint = board.tileToPos(path.get(0));
-        move =  board.tileToPos(board.ourTile()).directionTo(nextPoint);
+        Direction move =  board.tileToPos(board.ourTile()).directionTo(nextPoint);
+        if(!directions.contains(move)) {
+            move = new ArrayList<>(directions).get(rand.nextInt(directions.size()));
+        }
         return move;
     }
 
@@ -469,10 +474,7 @@ class Voronoi implements Driver {
         int closestBattlefield = -1;
         while(!queue.isEmpty()) {
             int next = queue.poll();
-            for(int n : board.neighbours(next)) {
-                if(!board.isFree(n)) {
-                    continue;
-                }
+            for(int n : board.freeNeighbours(next)) {
                 if(!marked[n]) {
                     marked[n] = true;
                     pathTo[n] = next;
