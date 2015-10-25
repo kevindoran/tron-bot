@@ -150,10 +150,7 @@ class BoardUtil {
         q.add(b.playerTile(player));
         while(!q.isEmpty()) {
             int next = q.poll();
-            for(int n : b.neighbours(next)) {
-                if(!b.isFree(n)) {
-                    continue;
-                }
+            for(int n : b.freeNeighbours(next)) {
                 if(distances[n] == 0) {
                     distances[n] = distances[next] + 1;
                     q.add(n);
@@ -242,6 +239,23 @@ class Board {
     public Set<Integer> neighbours(int tile) {
         Position pos = tileToPos(tile);
         return neighbours(pos.getX(), pos.getY());
+    }
+
+    public Set<Integer> freeNeighbours(int tile) {
+        Position pos = tileToPos(tile);
+        return freeNeighbours(pos.getX(), pos.getY());
+    }
+
+    public Set<Integer> freeNeighbours(int x, int y) {
+        Set<Integer> allNeighbours = neighbours(x, y);
+        Iterator<Integer> it = allNeighbours.iterator();
+        while(it.hasNext()) {
+            Integer next = it.next();
+            if(!isFree(next)) {
+                it.remove();
+            }
+        }
+        return allNeighbours;
     }
 
     public Set<Integer> neighbours(int x, int y) {
@@ -338,12 +352,61 @@ class StaySafeDriver implements Driver {
     }
 }
 
-class ChooseTheBiggerSliceDriver implements Driver {
+class ChooseTheBiggestCCDriver implements Driver {
 
     @Override
     public Direction move(Board board) {
-        // TODO
-        return Direction.DOWN;
+        int[] connectedComponents = new int[board.width*board.height];
+        Map<Integer, Integer> componentSize = new HashMap<>();
+        componentSize.put(0, 0);
+        int ccID = 1;
+        for(int i = 0; i <connectedComponents.length; i++) {
+            if (board.isFree(i) && connectedComponents[i] == 0) {
+                Queue<Integer> queue = new LinkedList<>();
+                componentSize.put(ccID, 0);
+                queue.add(i);
+                connectedComponents[i] = ccID;
+                while (!queue.isEmpty()) {
+                    int next = queue.poll();
+                    componentSize.put(ccID, componentSize.get(ccID) + 1);
+                    for (int n : board.freeNeighbours(next)) {
+                        if (board.isFree(n) && connectedComponents[n] == 0) {
+                            connectedComponents[n] = ccID;
+                            queue.add(n);
+                        }
+                    }
+                }
+                assert  componentSize.get(ccID) != 0;
+                ccID++;
+            }
+        }
+        Set<Integer> neighbours = board.freeNeighbours(board.ourTile());
+        boolean sameComponent = true;
+        int component = -1;
+        for(int n : neighbours) {
+            if(component == -1) {
+                component = connectedComponents[n];
+            } else if(connectedComponents[n] != component) {
+                sameComponent = false;
+                break;
+            }
+        }
+        // If there is only 1 component, this driver can't choose.
+        if(sameComponent) {
+            return null;
+        }
+        else {
+            int bestMove = -1;
+            int largestCC = -1;
+            for (int n : board.freeNeighbours(board.ourTile())) {
+                int ccSize = componentSize.get(connectedComponents[n]);
+                if (board.isFree(n) && ccSize > largestCC) {
+                    bestMove = n;
+                    largestCC = ccSize;
+                }
+            }
+            return board.tileToPos(board.ourTile()).directionTo(board.tileToPos(bestMove));
+        }
     }
 }
 
@@ -357,7 +420,7 @@ class WallHuggingDriver implements Driver {
             int tile = board.tileFrom(board.ourTile(), d);
             boolean isValid = tile != -1;
             if (isValid && board.isFree(tile)) {
-                Set<Integer> neighbours = board.neighbours(tile);
+                Set<Integer> neighbours = board.freeNeighbours(tile);
                 if (neighbours.size() < 3) {
                     // It's next to a wall!
                     return d;
@@ -369,12 +432,17 @@ class WallHuggingDriver implements Driver {
     }
 }
 
-
 class Voronoi implements Driver {
     private Driver backupDriver = new WallHuggingDriver();
+    private Driver connectedComponentChooser = new ChooseTheBiggestCCDriver();
     private boolean backupEnabled = false;
     @Override
     public Direction move(Board board) {
+        Direction move = connectedComponentChooser.move(board);
+        if(move != null) {
+            System.err.println("Component chooser driver.");
+            return move;
+        }
         List<Integer> path = pathToBattle(board);
         if(backupEnabled || path.size() == 0) {
             System.err.println("Backup enabled");
@@ -382,7 +450,7 @@ class Voronoi implements Driver {
             return backupDriver.move(board);
         }
         Position nextPoint = board.tileToPos(path.get(0));
-        Direction move =  board.tileToPos(board.ourTile()).directionTo(nextPoint);
+        move =  board.tileToPos(board.ourTile()).directionTo(nextPoint);
         return move;
     }
 
