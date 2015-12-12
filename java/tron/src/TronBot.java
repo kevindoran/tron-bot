@@ -113,6 +113,11 @@ class InputParser {
 }
 
 class BoardUtil {
+    public int availableSpaces(Board b, int player) {
+        boolean[] battlefield = battlefield(b);
+
+    }
+
     public static boolean[] battlefield(Board b) {
         boolean[] battlefield = new boolean[b.height*b.width];
         int[][] playerDistances = playerDistances(b);
@@ -165,6 +170,62 @@ class BoardUtil {
             }
         }
         return distances;
+    }
+
+    public class ConnectedComponents {
+        private int connectedComponents[];
+        private Map<Integer, Integer> whiteCount = new HashMap<>();
+        private Map<Integer, Integer> blackCount = new HashMap<>();
+        private int ccCount = 0;
+
+        public ConnectedComponents(Board b, int fromPosition) {
+            connectedComponents = new int[b.getSize()];
+            int ccBlackCount = 0;
+            int ccWhiteCount = 0;
+            int ccID = 1;
+            for(int neighbour : b.neighbours(fromPosition)) {
+                // If node is not free or already part of another component, skip.
+                if(!b.isFree(neighbour) || connectedComponents[neighbour] != 0) {
+                    continue;
+                }
+                Queue<Integer> bfsQueue = new LinkedList<>();
+                bfsQueue.add(neighbour);
+                while(!bfsQueue.isEmpty()) {
+                    int node = bfsQueue.poll();
+                    if(b.tileToPos(node).isBlack()) {
+                        ccBlackCount++;
+                    }
+                    else {
+                        ccWhiteCount++;
+                    }
+                    for(int n : b.freeNeighbours(node)) {
+                        if(connectedComponents[n] == 0) {
+                            connectedComponents[n] = ccID;
+                            bfsQueue.add(n);
+                        }
+                    }
+                }
+                whiteCount.put(ccID, ccWhiteCount);
+                blackCount.put(ccID, ccBlackCount);
+                ccWhiteCount = 0;
+                ccBlackCount = 0;
+                ccID++;
+            }
+            ccCount = ccID - 1;
+        }
+
+        public int[] getConnectedComponents() {
+            return connectedComponents;
+        }
+
+        public int getMaxMoves(int componentID) {
+            int maxMoves = Math.max(whiteCount.get(componentID), blackCount.get(componentID));
+            return maxMoves;
+        }
+
+        public int getComponentCount() {
+            return ccCount;
+        }
     }
 }
 
@@ -299,6 +360,10 @@ class Board {
         return tile;
     }
 
+    public int getSize() {
+        return height * width;
+    }
+
     public int posToTile(Position p) {
         return xyToTile(p.getX(), p.getY());
     }
@@ -320,6 +385,14 @@ class Position {
         return Direction.toDirection(dx, dy);
     }
 
+    /**
+     * Squares are either black or white. The first square is black like a chess board. The color is used for
+     * such things like finding out how many possible moves their are left in an area of the board.
+     */
+    public boolean isBlack() {
+        boolean isBlack = (x + y) % 2 == 0;
+        return isBlack;
+    }
     public int getX() {
         return x;
     }
@@ -435,6 +508,7 @@ class WallHuggingDriver implements Driver {
     }
 }
 
+// Places around 350
 class Voronoi implements Driver {
     private Driver backupDriver = new WallHuggingDriver();
     private Filter connectedComponentChooser = new AvoidSmallComponents();
@@ -472,7 +546,7 @@ class Voronoi implements Driver {
         marked[board.ourTile()] = true;
         queue.add(board.ourTile());
         int closestBattlefield = -1;
-        while(!queue.isEmpty()) {
+        while(!queue.isEmpty() && closestBattlefield == -1) {
             int next = queue.poll();
             for(int n : board.freeNeighbours(next)) {
                 if(!marked[n]) {
@@ -484,9 +558,6 @@ class Voronoi implements Driver {
                     }
                     queue.add(n);
                 }
-            }
-            if(closestBattlefield != -1) {
-                break;
             }
         }
         assert closestBattlefield != -1;
