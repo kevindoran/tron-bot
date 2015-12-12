@@ -379,6 +379,7 @@ class Position {
     }
 
     public Direction directionTo(Position p) {
+        // Throw exception instead.
         assert Math.abs(this.x - p.x) <= 1 && Math.abs(this.y - p.y) <= 1;
         int dx = p.getX() - this.x;
         int dy = p.getY() - this.y;
@@ -567,4 +568,57 @@ class Voronoi implements Driver {
         Collections.reverse(pathToBF);
         return pathToBF;
     }
+}
+
+class MinMax {
+
+    public interface Score {
+        int eval(Board b);
+    }
+
+    private static class PosScore {
+        int pos;
+        int score;
+
+        public PosScore(int pos, int score) {
+            this.pos = pos;
+            this.score = score;
+        }
+    }
+
+    public static Direction minMax(Board b, Score score, int depth) {
+        int position =  _minMax(b, score, depth).pos;
+        Direction bestDirection = b.tileToPos(b.ourTile()).directionTo(b.tileToPos(position));
+        return bestDirection;
+    }
+
+    private static PosScore _minMax(Board b, Score score, int depth) {
+        if (depth == 0) {
+            return new PosScore(b.ourTile(), score.eval(b));
+        }
+        int max = 0;
+        int maxPos = -1;
+        int min = -1;
+        int minPos = -1;
+        for (int n : b.freeNeighbours(b.ourTile())) {
+            int s = _minMax(b, score, depth - 1).score;
+            if (s < min || min == -1) {
+                min = s;
+                minPos = n;
+            }
+            if (s > max) {
+                max = s;
+                maxPos = n;
+            }
+        }
+        boolean maximize = depth % 2 == 1 ? true : false;
+        if (maximize) {
+            return new PosScore(maxPos, max);
+        } else {
+            return new PosScore(minPos, min);
+        }
+    }
+}
+
+
 }
