@@ -7,9 +7,10 @@ class Player {
     public static void main(String[] args) {
         int width = 30;
         int height = 20;
-//        Driver driver = new DeadDriver();
-//        Driver driver = new StaySafeDriver();
-        Driver driver  = new Voronoi();
+        // Driver driver = new DeadDriver();
+        // Driver driver = new StaySafeDriver();
+        // Driver driver  = new Voronoi();
+        Driver driver  = new VoronoiMinMax();
         InputParser p = new InputParser();
         Board board = p.init(width, height);
         while (true) {
@@ -113,9 +114,15 @@ class InputParser {
 }
 
 class BoardUtil {
-    public int availableSpaces(Board b, int player) {
-        boolean[] battlefield = battlefield(b);
 
+    public static int availableSpaces(Board b, int player) {
+        boolean [] noOutOfBounds = new boolean[b.getSize()];
+        return availableSpaces(b, player, noOutOfBounds);
+    }
+
+    public static int availableSpaces(Board b, int player, boolean[] outOfBounds) {
+        ConnectedComponents cc = new ConnectedComponents(b, b.playerTile(player), outOfBounds);
+        return cc.getMaxMoves();
     }
 
     public static boolean[] battlefield(Board b) {
@@ -136,7 +143,11 @@ class BoardUtil {
                 // If the player distances are the same or differ by one. The difference of one is needed when
                 // the players are on opposite type squares (imagine a checker board), then there are no squares they
                 // can both reach in the same number of moves.
-                if(Math.abs(ourDist - playerDistances[p][i]) <= 1) {
+                // Edit, choose the further edge in the case when players are on different color
+                // tiles.
+//                if(Math.abs(ourDist - playerDistances[p][i]) <= 1) {
+                int diff = ourDist - playerDistances[p][i];
+                if(diff == 0 || diff == 1) {
                     battlefieldCount++;
                     battlefield[i] = true;
                 }
@@ -172,23 +183,26 @@ class BoardUtil {
         return distances;
     }
 
-    public class ConnectedComponents {
+    public static class ConnectedComponents {
         private int connectedComponents[];
         private Map<Integer, Integer> whiteCount = new HashMap<>();
         private Map<Integer, Integer> blackCount = new HashMap<>();
         private int ccCount = 0;
+        private Board b;
 
-        public ConnectedComponents(Board b, int fromPosition) {
+        public ConnectedComponents(Board b, int fromPosition,  boolean[] outOfBounds) {
+            this.b = b;
             connectedComponents = new int[b.getSize()];
             int ccBlackCount = 0;
             int ccWhiteCount = 0;
             int ccID = 1;
-            for(int neighbour : b.neighbours(fromPosition)) {
+            for(int neighbour : b.freeNeighbours(fromPosition)) {
                 // If node is not free or already part of another component, skip.
-                if(!b.isFree(neighbour) || connectedComponents[neighbour] != 0) {
+                if(outOfBounds[neighbour] || connectedComponents[neighbour] != 0) {
                     continue;
                 }
                 Queue<Integer> bfsQueue = new LinkedList<>();
+                connectedComponents[neighbour] = ccID;
                 bfsQueue.add(neighbour);
                 while(!bfsQueue.isEmpty()) {
                     int node = bfsQueue.poll();
@@ -199,10 +213,11 @@ class BoardUtil {
                         ccWhiteCount++;
                     }
                     for(int n : b.freeNeighbours(node)) {
-                        if(connectedComponents[n] == 0) {
-                            connectedComponents[n] = ccID;
-                            bfsQueue.add(n);
+                        if(outOfBounds[n] || connectedComponents[n] != 0) {
+                            continue;
                         }
+                        connectedComponents[n] = ccID;
+                        bfsQueue.add(n);
                     }
                 }
                 whiteCount.put(ccID, ccWhiteCount);
@@ -218,8 +233,27 @@ class BoardUtil {
             return connectedComponents;
         }
 
+        public int getMaxMoves() {
+            int max = 0;
+            for(int i = 1; i <=getComponentCount(); i++) {
+                int ccMax = getMaxMoves(i);
+                if(ccMax > max) {
+                    max = ccMax;
+                }
+            }
+            return max;
+        }
+
         public int getMaxMoves(int componentID) {
-            int maxMoves = Math.max(whiteCount.get(componentID), blackCount.get(componentID));
+            int wc = whiteCount.get(componentID);
+            int bc = blackCount.get(componentID);
+            int min = Math.min(wc, bc);
+            int maxMoves = min*  2;
+            if(wc < bc && !b.tileToPos(b.ourTile()).isBlack()) {
+                maxMoves++;
+            } else if(bc < wc && b.tileToPos(b.ourTile()).isBlack()) {
+                maxMoves++;
+            }
             return maxMoves;
         }
 
@@ -235,8 +269,28 @@ class Board {
     public final int height;
     // Zero marks empty tiles;
     public static final int EMPTY = -2;
+    private static final int NOT_ON_BOARD = -1;
     private int[] floor;
     private int[] playerTile;
+    private Stack<Move> moveHistory = new Stack<>();
+
+    private class Move {
+        private int player;
+        private int tile;
+
+        public Move(int player, int tile) {
+            this.player = player;
+            this.tile = tile;
+        }
+
+        public int getPlayer() {
+            return player;
+        }
+
+        public int getTile() {
+            return tile;
+        }
+    }
 
     public Board(int width, int height, int playerCount, int us) {
         this.width = width;
@@ -246,6 +300,8 @@ class Board {
             floor[i] = EMPTY;
         }
         playerTile = new int[playerCount];
+        // Set all players off the board.
+        Arrays.fill(playerTile, NOT_ON_BOARD);
         US = us;
     }
 
@@ -274,11 +330,25 @@ class Board {
     }
 
     public void move(int player, int x, int y) {
-        // Could calculate history of moves here.
+        moveHistory.push(new Move(player, playerTile(player)));
         int tile = xyToTile(x, y);
         playerTile[player] = tile;
         System.err.printf("Player %d moving to (%d, %d) aka %d\n", player, x, y, tile);
         floor[tile] = player;
+    }
+
+    public void move(int player, Position p) {
+        move(player, p.getX(), p.getY());
+    }
+
+    public void move(int player, int tile) {
+        move(player, tileToPos(tile));
+    }
+    public void undoMove() {
+        Move lastMove = moveHistory.pop();
+        int currentTile = playerTile(lastMove.getPlayer());
+        floor[currentTile] = EMPTY;
+        playerTile[lastMove.getPlayer()] = lastMove.getTile();
     }
 
     public boolean isValid(int x, int y) {
@@ -387,7 +457,7 @@ class Position {
     }
 
     /**
-     * Squares are either black or white. The first square is black like a chess board. The color is used for
+     * Squares are either black or white. The first square (0, 0) is black. The color is used for
      * such things like finding out how many possible moves their are left in an area of the board.
      */
     public boolean isBlack() {
@@ -570,6 +640,55 @@ class Voronoi implements Driver {
     }
 }
 
+class VoronoiMinMax implements Driver {
+
+    private MinMax.Score countAvailableSpaces = new MinMax.Score() {
+        public int eval(Board b) {
+            boolean[] outOfBounds = BoardUtil.battlefield(b);
+            int spaceCount;
+            if(outOfBounds == null) {
+                spaceCount = BoardUtil.availableSpaces(b, b.US);
+            } else {
+                spaceCount = BoardUtil.availableSpaces(b, b.US, outOfBounds);
+            }
+            return spaceCount;
+        }
+
+        public int eval2(Board b) {
+            int[] playerSpaces = new int[b.getPlayerCount()];
+            boolean[] outOfBounds = BoardUtil.battlefield(b);
+            for(int p = 0; p < b.getPlayerCount(); p++) {
+                int spaceCount;
+                if(outOfBounds == null) {
+                    spaceCount = BoardUtil.availableSpaces(b, p);
+                } else {
+                    spaceCount = BoardUtil.availableSpaces(b, p, outOfBounds);
+                }
+            }
+            return comparativeSurplus(b, playerSpaces);
+        }
+
+        public int comparativeSurplus(Board b, int[] playerSpaces) {
+            int ourSpaces = playerSpaces[b.US];
+            int surplus = 0;
+            for(int p : playerSpaces) {
+                if(p == b.US) {
+                    continue;
+                }
+                surplus += ourSpaces - playerSpaces[p];
+            }
+            return surplus;
+        }
+    };
+
+    @Override
+    public Direction move(Board board) {
+        int depth = 3;
+        Direction bestMove = MinMax.minMax(board, countAvailableSpaces, depth);
+        return bestMove;
+    }
+}
+
 class MinMax {
 
     public interface Score {
@@ -593,32 +712,41 @@ class MinMax {
     }
 
     private static PosScore _minMax(Board b, Score score, int depth) {
-        if (depth == 0) {
+        int currentStep = 0;
+        return _minMax(b, score, depth, currentStep);
+    }
+
+    private static PosScore _minMax(Board b, Score score, int depth, int currentStep) {
+        int player = b.US + currentStep % b.getPlayerCount();
+        Set<Integer> freeNeighbours = b.freeNeighbours(b.playerTile(player));
+        if (currentStep == depth || freeNeighbours.isEmpty()) {
             return new PosScore(b.ourTile(), score.eval(b));
         }
         int max = 0;
         int maxPos = -1;
         int min = -1;
         int minPos = -1;
-        for (int n : b.freeNeighbours(b.ourTile())) {
-            int s = _minMax(b, score, depth - 1).score;
-            if (s < min || min == -1) {
+        boolean firstRun = true;
+        for (int n : freeNeighbours) {
+            b.move(player, n);
+            int s = _minMax(b, score, depth, currentStep + 1).score;
+            b.undoMove();
+            if (s < min || firstRun) {
                 min = s;
                 minPos = n;
             }
-            if (s > max) {
+            if (s > max || firstRun) {
                 max = s;
                 maxPos = n;
             }
         }
-        boolean maximize = depth % 2 == 1 ? true : false;
+        boolean maximize = player == b.US;
         if (maximize) {
+            assert maxPos != -1;
             return new PosScore(maxPos, max);
         } else {
+            assert minPos != -1;
             return new PosScore(minPos, min);
         }
     }
-}
-
-
 }
