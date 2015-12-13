@@ -270,8 +270,10 @@ class Board {
     // Zero marks empty tiles;
     public static final int EMPTY = -2;
     private static final int NOT_ON_BOARD = -1;
+    public static final int DEAD = -2;
     private int[] floor;
     private int[] playerTile;
+    private int playerCount;
     private Stack<Move> moveHistory = new Stack<>();
 
     private class Move {
@@ -295,6 +297,7 @@ class Board {
     public Board(int width, int height, int playerCount, int us) {
         this.width = width;
         this.height = height;
+        this.playerCount = playerCount;
         floor = new int[width * height];
         for(int i = 0; i < floor.length; i++) {
             floor[i] = EMPTY;
@@ -306,7 +309,7 @@ class Board {
     }
 
     public int getPlayerCount() {
-        return playerTile.length;
+        return playerCount;
     }
 
     public void clear(int player) {
@@ -315,6 +318,8 @@ class Board {
                 floor[i] = EMPTY;
             }
         }
+        playerTile[player] = DEAD;
+        playerCount--;
     }
 
     public int playerTile(int player) {
@@ -329,21 +334,27 @@ class Board {
         return floor[tile];
     }
 
-    public void move(int player, int x, int y) {
+    public int move(int player, int x, int y) {
         moveHistory.push(new Move(player, playerTile(player)));
         int tile = xyToTile(x, y);
         playerTile[player] = tile;
         System.err.printf("Player %d moving to (%d, %d) aka %d\n", player, x, y, tile);
+        // Can't move here.
+        if(floor[tile] != 0) {
+            return -1;
+        }
         floor[tile] = player;
+        return 0;
     }
 
-    public void move(int player, Position p) {
-        move(player, p.getX(), p.getY());
+    public int move(int player, Position p) {
+        return move(player, p.getX(), p.getY());
     }
 
-    public void move(int player, int tile) {
-        move(player, tileToPos(tile));
+    public int move(int player, int tile) {
+        return move(player, tileToPos(tile));
     }
+
     public void undoMove() {
         Move lastMove = moveHistory.pop();
         int currentTile = playerTile(lastMove.getPlayer());
@@ -414,7 +425,7 @@ class Board {
     }
 
     public Position tileToPos(int tile) {
-        if (tile > width * height - 1) {
+        if (tile > width * height - 1 || tile < 0) {
             throw new IndexOutOfBoundsException();
         }
         int x = tile % width;
