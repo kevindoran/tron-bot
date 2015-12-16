@@ -7,10 +7,10 @@ class Player {
     public static void main(String[] args) {
         int width = 30;
         int height = 20;
-        // Driver driver = new DeadDriver();
-        // Driver driver = new StaySafeDriver();
-        // Driver driver  = new Voronoi();
-        Driver driver  = new VoronoiMinMax();
+//        Driver driver = new DeadDriver();
+//        Driver driver = new StaySafeDriver();
+//        Driver driver  = new WallHuggingDriver();
+        Driver driver = new VoronoiMinMax();
         InputParser p = new InputParser();
         Board board = p.init(width, height);
         while (true) {
@@ -105,7 +105,7 @@ class InputParser {
             if (x0 == -1) {
                 current.clear(i);
             } else {
-                System.err.println("Moving: " + i + " to: (" + x1 + ", " + y1 + ")");
+//                System.err.println("Moving: " + i + " to: (" + x1 + ", " + y1 + ")");
                 // Board counts players starting at 1.
                 current.move(i, x1, y1);
             }
@@ -125,6 +125,31 @@ class BoardUtil {
         return cc.getMaxMoves();
     }
 
+    public static boolean isAloneInComponent(Board b) {
+        Queue<Integer> queue = new LinkedList<>();
+        Set<Integer> marked = new HashSet<>();
+        queue.add(b.ourTile());
+        boolean foundOpponent = false;
+        while(!queue.isEmpty() && !foundOpponent) {
+            int next = queue.poll();
+            for(int n : b.neighbours(next)) {
+                if(!marked.contains(n)) {
+                    for(int i = 0; i < b.getPlayerCount(); i++) {
+                        if(i != b.US && n == b.playerTile(i)) {
+                            foundOpponent = true;
+                            break;
+                        }
+                    }
+                    if(b.isFree(n)) {
+                        queue.add(n);
+                        marked.add(n);
+                    }
+                }
+            }
+        }
+        return !foundOpponent;
+    }
+
     public static boolean[] battlefield(Board b) {
         boolean[] battlefield = new boolean[b.height*b.width];
         int[][] playerDistances = playerDistances(b);
@@ -134,7 +159,7 @@ class BoardUtil {
                 continue;
             }
             int ourDist = playerDistances[b.US][i];
-            for(int p = 0; p < b.getPlayerCount(); p++) {
+            for(int p : b.getAlivePlayers()) {
                 if(p == b.US) continue;
                 // Zero distance means it is not possible to reach that position.
                 if(ourDist == 0 || playerDistances[p][i] == 0) {
@@ -161,7 +186,7 @@ class BoardUtil {
 
     public static int[][] playerDistances(Board b) {
         int[][] playerDistances = new int[b.getPlayerCount()][b.width*b.height];
-        for(int p = 0; p < b.getPlayerCount(); p++) {
+        for(int p : b.getAlivePlayers()) {
             playerDistances[p] = getDistancesFrom(b, p);
         }
         return playerDistances;
@@ -273,7 +298,8 @@ class Board {
     public static final int DEAD = -2;
     private int[] floor;
     private int[] playerTile;
-    private int playerCount;
+    private final int playerCount;
+    private int aliveCount;
     private Stack<Move> moveHistory = new Stack<>();
 
     private class Move {
@@ -298,6 +324,7 @@ class Board {
         this.width = width;
         this.height = height;
         this.playerCount = playerCount;
+        this.aliveCount = playerCount;
         floor = new int[width * height];
         for(int i = 0; i < floor.length; i++) {
             floor[i] = EMPTY;
@@ -312,6 +339,30 @@ class Board {
         return playerCount;
     }
 
+    public int getAliveCount() {
+        return aliveCount;
+    }
+
+    public List<Integer> getAlivePlayers() {
+        List<Integer> alivePlayers = new ArrayList<>();
+        boolean finished = false;
+        int p = US;
+        while(!finished) {
+            if(isAlive(p)) {
+                alivePlayers.add(p);
+            }
+            p = (p + 1) % playerCount;
+            if(p == US) {
+                finished = true;
+            }
+        }
+        return alivePlayers;
+    }
+
+    public boolean isAlive(int player) {
+        return playerTile[player] != DEAD;
+    }
+
     public void clear(int player) {
         for (int i = 0; i < floor.length; i++) {
             if (floor[i] == player) {
@@ -319,7 +370,7 @@ class Board {
             }
         }
         playerTile[player] = DEAD;
-        playerCount--;
+        aliveCount--;
     }
 
     public int playerTile(int player) {
@@ -338,11 +389,7 @@ class Board {
         moveHistory.push(new Move(player, playerTile(player)));
         int tile = xyToTile(x, y);
         playerTile[player] = tile;
-        System.err.printf("Player %d moving to (%d, %d) aka %d\n", player, x, y, tile);
-        // Can't move here.
-        if(floor[tile] != 0) {
-            return -1;
-        }
+//        System.err.printf("Player %d moving to (%d, %d) aka %d\n", player, x, y, tile);
         floor[tile] = player;
         return 0;
     }
@@ -379,7 +426,7 @@ class Board {
         Position now = tileToPos(tile);
         Position next = new Position(now.getX() + d.getDx(), now.getY() + d.getDy());
         if (!isValid(next)) {
-            System.err.printf("Invalid tile: %d", tile);
+//            System.err.printf("Invalid tile: %d", tile);
             return -1;
         }
         return posToTile(next);
@@ -504,12 +551,17 @@ class StaySafeDriver implements Driver {
         for (Direction d : Direction.values()) {
             int neighbourTile = board.tileFrom(board.ourTile(), d);
             boolean isValid = neighbourTile != -1;
+            if(!isValid) {
+                System.err.println("A");
+            }
             if(isValid && board.isFree(neighbourTile)) {
-                System.err.print("Moving to the " + d);
+//                System.err.print("Moving to the " + d);
+                System.err.println("B");
                 direction = d;
                 break;
             }
         }
+        System.err.println(direction);
         return direction;
     }
 }
@@ -653,6 +705,27 @@ class Voronoi implements Driver {
 
 class VoronoiMinMax implements Driver {
 
+    private Driver backupDriver = new WallHuggingDriver();
+    private boolean backupEnabled = false;
+    private int playerCount = 0;
+
+    @Override
+    public Direction move(Board board) {
+        int depth = 3;
+        Direction bestMove;
+        // If someone dies, the board can open up with new space.
+        if(playerCount != board.getAliveCount()) {
+            backupEnabled = false;
+        }
+        if(backupEnabled || BoardUtil.isAloneInComponent(board)) {
+            backupEnabled = true;
+            bestMove = backupDriver.move(board);
+        } else {
+            bestMove = MinMax.minMax(board, countAvailableSpaces, depth);
+        }
+        return bestMove;
+    }
+
     private MinMax.Score countAvailableSpaces = new MinMax.Score() {
         public int eval(Board b) {
             boolean[] outOfBounds = BoardUtil.battlefield(b);
@@ -666,7 +739,7 @@ class VoronoiMinMax implements Driver {
         }
 
         public int eval2(Board b) {
-            int[] playerSpaces = new int[b.getPlayerCount()];
+            int[] playerSpaces = new int[b.getAliveCount()];
             boolean[] outOfBounds = BoardUtil.battlefield(b);
             for(int p = 0; p < b.getPlayerCount(); p++) {
                 int spaceCount;
@@ -692,12 +765,6 @@ class VoronoiMinMax implements Driver {
         }
     };
 
-    @Override
-    public Direction move(Board board) {
-        int depth = 3;
-        Direction bestMove = MinMax.minMax(board, countAvailableSpaces, depth);
-        return bestMove;
-    }
 }
 
 class MinMax {
@@ -717,18 +784,21 @@ class MinMax {
     }
 
     public static Direction minMax(Board b, Score score, int depth) {
-        int position =  _minMax(b, score, depth).pos;
+        int currentStep = 0;
+        int player = b.US;
+        int position =  _minMax(b, score, depth, player, currentStep).pos;
         Direction bestDirection = b.tileToPos(b.ourTile()).directionTo(b.tileToPos(position));
         return bestDirection;
     }
 
-    private static PosScore _minMax(Board b, Score score, int depth) {
-        int currentStep = 0;
-        return _minMax(b, score, depth, currentStep);
-    }
 
-    private static PosScore _minMax(Board b, Score score, int depth, int currentStep) {
-        int player = b.US + currentStep % b.getPlayerCount();
+    private static PosScore _minMax(Board b, Score score, int depth, int player, int currentStep) {
+        int attempts = 0;
+        while(!b.isAlive(player)) {
+            player = (player + 1) % b.getPlayerCount();
+            attempts++;
+            assert attempts < b.getPlayerCount();
+        }
         Set<Integer> freeNeighbours = b.freeNeighbours(b.playerTile(player));
         if (currentStep == depth || freeNeighbours.isEmpty()) {
             return new PosScore(b.ourTile(), score.eval(b));
@@ -740,15 +810,17 @@ class MinMax {
         boolean firstRun = true;
         for (int n : freeNeighbours) {
             b.move(player, n);
-            int s = _minMax(b, score, depth, currentStep + 1).score;
+            int s = _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1).score;
             b.undoMove();
             if (s < min || firstRun) {
                 min = s;
                 minPos = n;
+                firstRun = false;
             }
             if (s > max || firstRun) {
                 max = s;
                 maxPos = n;
+                firstRun = false;
             }
         }
         boolean maximize = player == b.US;

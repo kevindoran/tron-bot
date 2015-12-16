@@ -5,7 +5,7 @@ import org.junit.Test;
 import java.util.Arrays;
 import java.util.List;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.*;
 
 /**
  * Created by Kevin on 2015/10/24.
@@ -18,6 +18,26 @@ public class BoardUtilTest {
         int height = 4;
         int width = 4;
         boardA = new Board(width, height, 2, 0);
+    }
+
+    @Test
+    /**
+     *   x  x  0  0
+     *   x  x  0  0h
+     *   x  x  0  x
+     *   1h x  0  0
+     */
+    public void isAloneInComponentTest() {
+        boardA.move(1, 0, 3);
+        boardA.move(0, 3, 3);
+        boardA.move(0, 2, 3);
+        boardA.move(0, 2, 2);
+        boardA.move(0, 2, 1);
+        boardA.move(0, 2, 0);
+        assertFalse(BoardUtil.isAloneInComponent(boardA));
+        boardA.move(0, 3, 0);
+        boardA.move(0, 3, 2);
+        assertTrue(BoardUtil.isAloneInComponent(boardA));
     }
 
     @Test
