@@ -24,9 +24,10 @@ public class SimulationTest {
         Random rn = new Random();
         board = new Board(30, 20, 4, 0);
         // P0 is the test sim.
-        players[0] = new SimPlayer(new VoronoiMinMax());
-        players[1] = new SimPlayer(new WallHuggingDriver());
+//        players[0] = new SimPlayer(new VoronoiMinMax());
         players[2] = new SimPlayer(new StaySafeDriver());
+        players[2] = new SimPlayer(new StaySafeDriver());
+        players[1] = new SimPlayer(new WallHuggingDriver());
         players[3] = new SimPlayer(new StaySafeDriver());
         initialPositions = new Position[playerCount];
         for(int p = 0; p < playerCount; p++) {
@@ -52,7 +53,7 @@ public class SimulationTest {
     }
 
     private void runSim() {
-        while(board.getPlayerCount() > 1) {
+        while(board.getAliveCount() > 1) {
             for(int p = 0; p < players.length; p++) {
                 if (board.playerTile(p) == Board.DEAD) {
                     continue;
@@ -63,11 +64,12 @@ public class SimulationTest {
                     Direction d = players[p].next(message);
                     int tile = board.tileFrom(board.playerTile(p), d);
                     position = board.tileToPos(tile);
+                    board.move(p, position);
                 } catch(Exception e) {
-                    //System.out.println(String.format("Exception from player %d: " + e.toString(), p));
-                    throw e;
-//                    board.clear(p);
-//                    continue;
+                    System.out.println(String.format("Exception from player %d: " + e.toString(), p));
+//                    throw e;
+                    board.clear(p);
+                    continue;
                 }
                 if(board.isValid(position)&& board.move(p, position) != -1) {
                     System.out.println(String.format("Player %d moved to invalid position.", p));
@@ -88,15 +90,19 @@ public class SimulationTest {
         }
 
         public void init(int width, int height, String message) {
+            System.out.println(message);
             System.setIn(new ByteArrayInputStream(message.getBytes(StandardCharsets.UTF_8)));
             board = parser.init(width, height);
         }
 
         public Direction next(String input) {
             System.setIn(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)));
+            parser.update(board);
             Direction nextMove = d.move(board);
             int tile = board.tileFrom(board.ourTile(), nextMove);
-            parser.update(board);
+            if(!board.isFree(tile)) {
+                throw new RuntimeException("Shouldn't be moving to invalid tile.");
+            }
             return nextMove;
         }
     }
@@ -105,14 +111,14 @@ public class SimulationTest {
         StringBuilder sb = new StringBuilder();
         sb.append(b.getPlayerCount()).append(" ").append(player).append("\n");
         for(int p = 0; p < b.getPlayerCount(); p++) {
-            String initialPos = "" + initialPositions[p].getX() +
+            String initialPos = "" + initialPositions[p].getX() + " " +
                     initialPositions[p].getY();
             sb.append(initialPos).append(" ");
             if(b.playerTile(p) == b.DEAD) {
                 sb.append(initialPos).append("\n");
             } else {
-                sb.append(b.tileToPos(b.playerTile(p)).getX())
-                        .append(b.tileToPos(b.playerTile(p))).append("\n");
+                sb.append(b.tileToPos(b.playerTile(p)).getX()).append(" ")
+                        .append(b.tileToPos(b.playerTile(p)).getY()).append("\n");
             }
         }
         return sb.toString();
