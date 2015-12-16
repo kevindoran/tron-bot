@@ -151,6 +151,10 @@ class BoardUtil {
     }
 
     public static boolean[] battlefield(Board b) {
+        return battlefield(b, true);
+    }
+
+    public static boolean[] battlefield(Board b, boolean inclusive) {
         boolean[] battlefield = new boolean[b.height*b.width];
         int[][] playerDistances = playerDistances(b);
         int battlefieldCount = 0;
@@ -172,7 +176,8 @@ class BoardUtil {
                 // tiles.
 //                if(Math.abs(ourDist - playerDistances[p][i]) <= 1) {
                 int diff = ourDist - playerDistances[p][i];
-                if(diff == 0 || diff == 1) {
+                int threshold = inclusive ? 0 : 1;
+                if(diff >= threshold || diff == 1) {
                     battlefieldCount++;
                     battlefield[i] = true;
                 }
@@ -333,6 +338,46 @@ class Board {
         // Set all players off the board.
         Arrays.fill(playerTile, NOT_ON_BOARD);
         US = us;
+    }
+
+
+    public static Board fromString(String str) {
+        String[] lines = str.split("\n");
+        Scanner sc = new Scanner(str);
+        sc.useDelimiter("(\\s+|h\\s+)");
+        Set<Integer> players = new HashSet<>();
+        int count = 0;
+        while(sc.hasNext()) {
+            if(!sc.hasNextInt()) {
+                sc.next();
+            } else {
+                players.add(sc.nextInt());
+            }
+            count++;
+        }
+        int height = lines.length;
+        int width = count / height;
+        // We don't care which player number we are when displaying. So just use 0.
+        Board b = new Board(width, height, players.size(), 0);
+        Map<Integer, Integer> endPositions = new HashMap<>();
+        sc = new Scanner(str);
+        int tile = 0;
+        while (sc.hasNext()) {
+            if(sc.hasNextInt()) {
+                b.move(sc.nextInt(), tile);
+            } else {
+                String next = sc.next();
+                if(Character.isDigit(next.charAt(0))) {
+                    int head = Integer.parseInt(next.substring(0, next.length()-1));
+                    endPositions.put(head, tile);
+                }
+            }
+            tile++;
+        }
+        for(Map.Entry<Integer, Integer> pos : endPositions.entrySet()) {
+            b.move(pos.getKey(), pos.getValue());
+        }
+        return b;
     }
 
     public int getPlayerCount() {
@@ -727,8 +772,9 @@ class VoronoiMinMax implements Driver {
     }
 
     private MinMax.Score countAvailableSpaces = new MinMax.Score() {
-        public int eval(Board b) {
-            boolean[] outOfBounds = BoardUtil.battlefield(b);
+        public int eval2(Board b) {
+            boolean inclusive = false;
+            boolean[] outOfBounds = BoardUtil.battlefield(b, inclusive);
             int spaceCount;
             if(outOfBounds == null) {
                 spaceCount = BoardUtil.availableSpaces(b, b.US);
@@ -738,10 +784,11 @@ class VoronoiMinMax implements Driver {
             return spaceCount;
         }
 
-        public int eval2(Board b) {
+        public int eval(Board b) {
             int[] playerSpaces = new int[b.getAliveCount()];
-            boolean[] outOfBounds = BoardUtil.battlefield(b);
-            for(int p = 0; p < b.getPlayerCount(); p++) {
+            boolean inclusive = false;
+            boolean[] outOfBounds = BoardUtil.battlefield(b, inclusive);
+            for(int p : b.getAlivePlayers()) {
                 int spaceCount;
                 if(outOfBounds == null) {
                     spaceCount = BoardUtil.availableSpaces(b, p);
@@ -810,12 +857,11 @@ class MinMax {
         boolean firstRun = true;
         for (int n : freeNeighbours) {
             b.move(player, n);
-            int s = _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1).score;
+            int s = currentStep + _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1).score;
             b.undoMove();
             if (s < min || firstRun) {
                 min = s;
                 minPos = n;
-                firstRun = false;
             }
             if (s > max || firstRun) {
                 max = s;

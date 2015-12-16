@@ -20,4 +20,25 @@ public class VoronoiMinMaxTest {
         Direction move = mmDriver.move(b);
         assertEquals(Direction.RIGHT, move);
     }
+
+    /**
+     *  x  x  1  x  x
+     *  x  x  1  x  x
+     *  x  x  1  0  0
+     *  x  x  x  0  x
+     *  x  0  0  0  x
+     */
+    @Test
+    public void testMoveCornered() {
+        String boardStr =
+                "2h  x  0  x  x\n" +
+                "x  x  0  x  x\n" +
+                "x  x  0h  1  1\n" +
+                "x  x  x  1  x\n" +
+                "x  1h  1  1  x";
+        Board b = Board.fromString(boardStr);
+        Driver d = new VoronoiMinMax();
+        Direction move = d.move(b);
+        assertEquals(Direction.LEFT, move);
+    }
 }
