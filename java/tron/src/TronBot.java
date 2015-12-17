@@ -65,12 +65,13 @@ enum Direction {
 }
 
 class InputParser {
-    private Scanner in = new Scanner(System.in);
+    private Scanner in;
 
     public InputParser() {
     }
 
     public Board init(int width, int height) {
+        in = new Scanner(System.in);
         int playerCount = in.nextInt();
         int us = in.nextInt();
         Board b = new Board(width, height, playerCount, us);
@@ -80,6 +81,9 @@ class InputParser {
     }
 
     public void update(Board current) {
+        if(!in.hasNext()) {
+            in = new Scanner(System.in);
+        }
         boolean startup = false;
         update(current, startup);
     }
@@ -667,11 +671,15 @@ class AvoidSmallComponents implements Filter {
 
 class WallHuggingDriver implements Driver {
     private StaySafeDriver backupDriver = new StaySafeDriver();
-
+    private Filter deadEndFilter = new AvoidSmallComponents();
     @Override
     public Direction move(Board board) {
         Direction direction;
+        Set<Direction> okayDirections = deadEndFilter.filterBadMoves(board, new HashSet<>(Arrays.asList(Direction.values())));
         for(Direction d : Direction.values()) {
+            if(!okayDirections.contains(d)) {
+                continue;
+            }
             int tile = board.tileFrom(board.ourTile(), d);
             boolean isValid = tile != -1;
             if (isValid && board.isFree(tile)) {
@@ -756,7 +764,7 @@ class VoronoiMinMax implements Driver {
 
     @Override
     public Direction move(Board board) {
-        int depth = 3;
+        int depth = 4;
         Direction bestMove;
         // If someone dies, the board can open up with new space.
         if(playerCount != board.getAliveCount()) {
@@ -772,7 +780,7 @@ class VoronoiMinMax implements Driver {
     }
 
     private MinMax.Score countAvailableSpaces = new MinMax.Score() {
-        public int eval2(Board b) {
+        public int eval(Board b) {
             boolean inclusive = false;
             boolean[] outOfBounds = BoardUtil.battlefield(b, inclusive);
             int spaceCount;
@@ -784,7 +792,7 @@ class VoronoiMinMax implements Driver {
             return spaceCount;
         }
 
-        public int eval(Board b) {
+        public int eval2(Board b) {
             int[] playerSpaces = new int[b.getAliveCount()];
             boolean inclusive = false;
             boolean[] outOfBounds = BoardUtil.battlefield(b, inclusive);
@@ -857,7 +865,7 @@ class MinMax {
         boolean firstRun = true;
         for (int n : freeNeighbours) {
             b.move(player, n);
-            int s = currentStep + _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1).score;
+            int s = 1 + _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1).score;
             b.undoMove();
             if (s < min || firstRun) {
                 min = s;
