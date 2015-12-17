@@ -1,5 +1,6 @@
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 // Everything must be in the same file for- submission.
 class Player {
@@ -136,7 +137,7 @@ class BoardUtil {
         boolean foundOpponent = false;
         while(!queue.isEmpty() && !foundOpponent) {
             int next = queue.poll();
-            for(int n : b.neighbours(next)) {
+            for(int n : b.neighbours(next).boxed().collect(Collectors.toList())) {
                 if(!marked.contains(n)) {
                     for(int i = 0; i < b.getPlayerCount(); i++) {
                         if(i != b.US && n == b.playerTile(i)) {
@@ -207,13 +208,12 @@ class BoardUtil {
         q.add(b.playerTile(player));
         while(!q.isEmpty()) {
             int next = q.poll();
-            for(int n : b.freeNeighbours(next)) {
-                if(distances[n] == 0) {
-                    distances[n] = distances[next] + 1;
-                    q.add(n);
-                }
+            b.freeNeighbours(next).filter(n -> distances[n] == 0)
+                    .forEach(n -> {
+                        distances[n] = distances[next] + 1;
+                        q.add(n);
+                    });
             }
-        }
         return distances;
     }
 
@@ -230,7 +230,7 @@ class BoardUtil {
             int ccBlackCount = 0;
             int ccWhiteCount = 0;
             int ccID = 1;
-            for(int neighbour : b.freeNeighbours(fromPosition)) {
+            for(int neighbour : b.freeNeighbours(fromPosition).boxed().collect(Collectors.toList())) {
                 // If node is not free or already part of another component, skip.
                 if(outOfBounds[neighbour] || connectedComponents[neighbour] != 0) {
                     continue;
@@ -246,13 +246,12 @@ class BoardUtil {
                     else {
                         ccWhiteCount++;
                     }
-                    for(int n : b.freeNeighbours(node)) {
-                        if(outOfBounds[n] || connectedComponents[n] != 0) {
-                            continue;
-                        }
-                        connectedComponents[n] = ccID;
-                        bfsQueue.add(n);
-                    }
+                    final int tempCCID = ccID;
+                    b.freeNeighbours(node).filter( n -> !(outOfBounds[n] || connectedComponents[n] != 0))
+                            .forEach(n -> {
+                            connectedComponents[n] = tempCCID;
+                            bfsQueue.add(n);
+                    });
                 }
                 whiteCount.put(ccID, ccWhiteCount);
                 blackCount.put(ccID, ccBlackCount);
@@ -481,43 +480,35 @@ class Board {
         return posToTile(next);
     }
 
-    public Set<Integer> neighbours(int tile) {
+    public IntStream neighbours(int tile) {
         Position pos = tileToPos(tile);
         return neighbours(pos.getX(), pos.getY());
     }
 
-    public Set<Integer> freeNeighbours(int tile) {
+    public IntStream freeNeighbours(int tile) {
         Position pos = tileToPos(tile);
         return freeNeighbours(pos.getX(), pos.getY());
     }
 
-    public Set<Integer> freeNeighbours(int x, int y) {
-        Set<Integer> allNeighbours = neighbours(x, y);
-        Iterator<Integer> it = allNeighbours.iterator();
-        while(it.hasNext()) {
-            Integer next = it.next();
-            if(!isFree(next)) {
-                it.remove();
-            }
-        }
-        return allNeighbours;
+    public IntStream freeNeighbours(int x, int y) {
+        IntStream neighbours = neighbours(x, y);
+        return neighbours.filter((i)->isFree(i));
     }
 
-    public Set<Integer> neighbours(int x, int y) {
-        Set<Integer> neighbours = new HashSet<>();
-        if (x - 1 >= 0) {
-            neighbours.add(xyToTile(x - 1, y));
-        }
-        if (x + 1 < width) {
-            neighbours.add(xyToTile(x + 1, y));
-        }
-        if (y - 1 >= 0) {
-            neighbours.add(xyToTile(x, y - 1));
-        }
-        if (y + 1 < height) {
-            neighbours.add(xyToTile(x, y + 1));
-        }
-        return neighbours;
+    public IntStream neighbours(int x, int y) {
+        return IntStream.range(0, 4).map((i) -> {
+            if (i == 0 && x - 1 > 0) {
+                return xyToTile(x - 1, y);
+            } else if(i == 1 && x + 1 < width) {
+                return xyToTile(x + 1, y);
+            } else if(i == 2 && y - 1 >= 0) {
+                return xyToTile(x, y - 1);
+            } else if(i == 3 && y + 1 < height) {
+                return xyToTile(x, y + 1);
+            } else {
+                return -1;
+            }
+        }).filter((i) -> i != -1);
     }
 
     public Position tileToPos(int tile) {
@@ -640,12 +631,12 @@ class AvoidSmallComponents implements Filter {
                 while (!queue.isEmpty()) {
                     int next = queue.poll();
                     componentSize.put(ccID, componentSize.get(ccID) + 1);
-                    for (int n : board.freeNeighbours(next)) {
-                        if (board.isFree(n) && connectedComponents[n] == 0) {
-                            connectedComponents[n] = ccID;
+                    final int tempCCID = ccID;
+                    board.freeNeighbours(next).filter(n -> board.isFree(n) && connectedComponents[n] == 0)
+                            .forEach(n ->  {
+                            connectedComponents[n] = tempCCID;
                             queue.add(n);
-                        }
-                    }
+                        });
                 }
                 assert  componentSize.get(ccID) != 0;
                 if(componentSize.get(ccID) > maxComponentSize) {
@@ -683,8 +674,8 @@ class WallHuggingDriver implements Driver {
             int tile = board.tileFrom(board.ourTile(), d);
             boolean isValid = tile != -1;
             if (isValid && board.isFree(tile)) {
-                Set<Integer> neighbours = board.freeNeighbours(tile);
-                if (neighbours.size() < 3) {
+                long neighbours = board.freeNeighbours(tile).count();
+                if (neighbours < 3) {
                     // It's next to a wall!
                     return d;
                 }
@@ -735,7 +726,7 @@ class Voronoi implements Driver {
         int closestBattlefield = -1;
         while(!queue.isEmpty() && closestBattlefield == -1) {
             int next = queue.poll();
-            for(int n : board.freeNeighbours(next)) {
+            for(int n : board.freeNeighbours(next).boxed().collect(Collectors.toList())) {
                 if(!marked[n]) {
                     marked[n] = true;
                     pathTo[n] = next;
@@ -854,7 +845,7 @@ class MinMax {
             attempts++;
             assert attempts < b.getPlayerCount();
         }
-        Set<Integer> freeNeighbours = b.freeNeighbours(b.playerTile(player));
+        List<Integer> freeNeighbours = b.freeNeighbours(b.playerTile(player)).boxed().collect(Collectors.toList());
         if (currentStep == depth || freeNeighbours.isEmpty()) {
             return new PosScore(b.ourTile(), score.eval(b));
         }
