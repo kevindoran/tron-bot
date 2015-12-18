@@ -170,7 +170,7 @@ class BoardUtil {
             int ourDist = playerDistances[b.US][i];
             for(int p : b.getAlivePlayers()) {
                 if(p == b.US) continue;
-                // Zero distance means it is not possible to reach that position.
+                // Zero distance means it is not possible to reach that tile.
                 if(ourDist == 0 || playerDistances[p][i] == 0) {
                     continue;
                 }
@@ -182,7 +182,7 @@ class BoardUtil {
 //                if(Math.abs(ourDist - playerDistances[p][i]) <= 1) {
                 int diff = ourDist - playerDistances[p][i];
                 int threshold = inclusive ? 0 : 1;
-                if(diff >= threshold || diff == 1) {
+                if(diff >= threshold && diff <= 1) {
                     battlefieldCount++;
                     battlefield[i] = true;
                 }
@@ -497,7 +497,7 @@ class Board {
 
     public IntStream neighbours(int x, int y) {
         return IntStream.range(0, 4).map((i) -> {
-            if (i == 0 && x - 1 > 0) {
+            if (i == 0 && x - 1 >= 0) {
                 return xyToTile(x - 1, y);
             } else if(i == 1 && x + 1 < width) {
                 return xyToTile(x + 1, y);
@@ -755,7 +755,7 @@ class VoronoiMinMax implements Driver {
 
     @Override
     public Direction move(Board board) {
-        int depth = 4;
+        int depth = 3;
         Direction bestMove;
         // If someone dies, the board can open up with new space.
         if(playerCount != board.getAliveCount()) {
@@ -856,6 +856,7 @@ class MinMax {
         boolean firstRun = true;
         for (int n : freeNeighbours) {
             b.move(player, n);
+            // Adding one favours living longer in case all options end in death.
             int s = 1 + _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1).score;
             b.undoMove();
             if (s < min || firstRun) {
@@ -865,8 +866,8 @@ class MinMax {
             if (s > max || firstRun) {
                 max = s;
                 maxPos = n;
-                firstRun = false;
             }
+            firstRun = false;
         }
         boolean maximize = player == b.US;
         if (maximize) {
