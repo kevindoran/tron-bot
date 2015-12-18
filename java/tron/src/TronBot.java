@@ -217,6 +217,47 @@ class BoardUtil {
         return distances;
     }
 
+    private static class PlayerTilePair {
+        int player;
+
+        public PlayerTilePair(int player, int tile) {
+            this.player = player;
+            this.tile = tile;
+        }
+
+        int tile;
+    }
+
+    /**
+     * Calculates the space reachable by each player without crossing the battlefield. Faster than previous method
+     * as it calculates the battlefield implicitly while counting spaces.
+     */
+    public static int[] playerZoneCounts(Board b) {
+        int[][] playerDistances = new int[b.getPlayerCount() + 1][b.width*b.height];
+        int[] positionCounts = new int[b.getPlayerCount()];
+        final int MIN_INDEX = b.getPlayerCount();
+        int longestDistance = 0;
+        Queue<PlayerTilePair> queue = new LinkedList<>();
+        for(int p : b.getAlivePlayers()) {
+            queue.add(new PlayerTilePair(p, b.playerTile(p)));
+        }
+        while(!queue.isEmpty()) {
+            PlayerTilePair playerPos = queue.poll();
+            b.freeNeighbours(playerPos.tile).filter((t) -> playerDistances[playerPos.player][t] == 0).forEach((t) -> {
+                int dist = playerDistances[playerPos.player][playerPos.tile] + 1;
+                // Note: The MIN_INDEX values will be overwitten if two players are equal distances. This allows us to count
+                // the space once for each player. Thus this is a battlefield inclusive algorithm.
+                if (playerDistances[MIN_INDEX][t] == 0 || dist <= playerDistances[MIN_INDEX][t]) {
+                    playerDistances[playerPos.player][t] = dist;
+                    playerDistances[MIN_INDEX][t] = dist;
+                    positionCounts[playerPos.player]++;
+                    queue.add(new PlayerTilePair(playerPos.player, t));
+                }
+            });
+        }
+        return positionCounts;
+    }
+
     public static class ConnectedComponents {
         private int connectedComponents[];
         private Map<Integer, Integer> whiteCount = new HashMap<>();
@@ -341,6 +382,15 @@ class Board {
         // Set all players off the board.
         Arrays.fill(playerTile, NOT_ON_BOARD);
         US = us;
+    }
+
+    public Board(Board toCopy) {
+        this(toCopy.width, toCopy.height, toCopy.playerCount, toCopy.US);
+        this.floor = toCopy.floor;
+        this.aliveCount = toCopy.aliveCount;
+        this.playerTile = toCopy.playerTile;
+        this.moveHistory = new Stack<>();
+        this.moveHistory.addAll(toCopy.moveHistory);
     }
 
 
@@ -755,11 +805,12 @@ class VoronoiMinMax implements Driver {
 
     @Override
     public Direction move(Board board) {
-        int depth = 3;
+        int depth = 4;
         Direction bestMove;
         // If someone dies, the board can open up with new space.
         if(playerCount != board.getAliveCount()) {
             backupEnabled = false;
+            playerCount = board.getAliveCount();
         }
         if(backupEnabled || BoardUtil.isAloneInComponent(board)) {
             backupEnabled = true;
@@ -771,15 +822,9 @@ class VoronoiMinMax implements Driver {
     }
 
     private MinMax.Score countAvailableSpaces = new MinMax.Score() {
-        public int eval(Board b) {
-            boolean inclusive = false;
-            boolean[] outOfBounds = BoardUtil.battlefield(b, inclusive);
+        public int eval(Board b, int player) {
             int spaceCount;
-            if(outOfBounds == null) {
-                spaceCount = BoardUtil.availableSpaces(b, b.US);
-            } else {
-                spaceCount = BoardUtil.availableSpaces(b, b.US, outOfBounds);
-            }
+            spaceCount = BoardUtil.playerZoneCounts(b)[player];
             return spaceCount;
         }
 
@@ -816,16 +861,18 @@ class VoronoiMinMax implements Driver {
 class MinMax {
 
     public interface Score {
-        int eval(Board b);
+        int eval(Board b, int player);
     }
 
     private static class PosScore {
         int pos;
         int score;
+        Board board;
 
-        public PosScore(int pos, int score) {
+        public PosScore(int pos, int score, Board b) {
             this.pos = pos;
             this.score = score;
+            this.board = b;
         }
     }
 
@@ -847,17 +894,19 @@ class MinMax {
         }
         List<Integer> freeNeighbours = b.freeNeighbours(b.playerTile(player)).boxed().collect(Collectors.toList());
         if (currentStep == depth || freeNeighbours.isEmpty()) {
-            return new PosScore(b.ourTile(), score.eval(b));
+            return new PosScore(b.ourTile(), score.eval(b, player), new Board(b));
         }
         int max = 0;
         int maxPos = -1;
         int min = -1;
         int minPos = -1;
+        Board maxBoard = null;
         boolean firstRun = true;
         for (int n : freeNeighbours) {
             b.move(player, n);
             // Adding one favours living longer in case all options end in death.
-            int s = 1 + _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1).score;
+            Board leafBoard = _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1).board;
+            int s = score.eval(leafBoard, player);
             b.undoMove();
             if (s < min || firstRun) {
                 min = s;
@@ -866,16 +915,17 @@ class MinMax {
             if (s > max || firstRun) {
                 max = s;
                 maxPos = n;
+                maxBoard = leafBoard;
             }
             firstRun = false;
         }
-        boolean maximize = player == b.US;
+        boolean maximize = true;//= player == b.US;
         if (maximize) {
             assert maxPos != -1;
-            return new PosScore(maxPos, max);
+            return new PosScore(maxPos, max, maxBoard);
         } else {
             assert minPos != -1;
-            return new PosScore(minPos, min);
+            return new PosScore(minPos, min, maxBoard);
         }
     }
 }

@@ -36,7 +36,7 @@ public class BoardUtilTest {
         boardA.move(0, 2, 0);
         assertFalse(BoardUtil.isAloneInComponent(boardA));
         boardA.move(0, 3, 0);
-        boardA.move(0, 3, 2);
+        boardA.move(0, 3, 1);
         assertTrue(BoardUtil.isAloneInComponent(boardA));
     }
 
@@ -52,8 +52,25 @@ public class BoardUtilTest {
         boolean[] battlefield = BoardUtil.battlefield(boardA);
         assertEquals(expectedBattlefield.length, battlefield.length);
         for (int i = 0; i < battlefield.length; i++) {
-            assertEquals(String.format("square %d, expected to be battlefield: %s.", i, expectedBattlefield[i]), expectedBattlefield[i], battlefield[i]);
+            assertEquals(String.format("square %d, expected to be battlefield: %s.", i, expectedBattlefield[i]),
+                    expectedBattlefield[i], battlefield[i]);
         }
+    }
+
+    @Test
+    public void testPlayerZoneCounts() {
+        // a, b & c are the tiles closet to 0, 1 & 2 respectively.
+        String boardStr =
+                "1  b  c  c  2\n"  +
+                "1  b  c  c  2h\n" +
+                "1h b  b  x  c\n"  +
+                "b  b  a  a  x\n"  +
+                "b  a  a  0h 0\n";
+        Board b = Board.fromString(boardStr);
+        int[] zoneCounts = BoardUtil.playerZoneCounts(b);
+        assertEquals(6, zoneCounts[0]);
+        assertEquals(7, zoneCounts[1]);
+        assertEquals(7, zoneCounts[2]);
     }
 
     @Test
