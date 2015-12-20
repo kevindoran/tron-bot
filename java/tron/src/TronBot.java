@@ -232,30 +232,57 @@ class BoardUtil {
      * Calculates the space reachable by each player without crossing the battlefield. Faster than previous method
      * as it calculates the battlefield implicitly while counting spaces.
      */
-    public static int[] playerZoneCounts(Board b) {
-        int[][] playerDistances = new int[b.getPlayerCount() + 1][b.width*b.height];
-        int[] positionCounts = new int[b.getPlayerCount()];
-        final int MIN_INDEX = b.getPlayerCount();
+    public static int[] playerZoneCounts(Board b, int playersTurn) {
+        int[][] playerDistances = new int[b.getPlayerCount()][b.getSize()];
+        int[] whiteCount = new int[b.getPlayerCount()];
+        int[] blackCount = new int[b.getPlayerCount()];
+        int[] minDistance = new int[b.getSize()];
+        int[] firstReachingPlayer = new int[b.getSize()];
         int longestDistance = 0;
         Queue<PlayerTilePair> queue = new LinkedList<>();
-        for(int p : b.getAlivePlayers()) {
+        for(int p : b.getAlivePlayers(playersTurn)) {
             queue.add(new PlayerTilePair(p, b.playerTile(p)));
         }
         while(!queue.isEmpty()) {
             PlayerTilePair playerPos = queue.poll();
             b.freeNeighbours(playerPos.tile).filter((t) -> playerDistances[playerPos.player][t] == 0).forEach((t) -> {
                 int dist = playerDistances[playerPos.player][playerPos.tile] + 1;
-                // Note: The MIN_INDEX values will be overwitten if two players are equal distances. This allows us to count
-                // the space once for each player. Thus this is a battlefield inclusive algorithm.
-                if (playerDistances[MIN_INDEX][t] == 0 || dist <= playerDistances[MIN_INDEX][t]) {
+                // If two players are the same distance, the one who's turn is first will claim the tile first. The tile
+                // will be within the reachable bound of the first player, but not the second. An explicit check isn't
+                // needed due to the order of the BFS. Assert here just to be sure.
+//                boolean beatenByTurnOrder = dist == minDistance[t] && firstReachingPlayer[t] < playerPos.player;
+//                if(beatenByTurnOrder) {
+//                    throw new RuntimeException();
+//                }
+                if(dist < minDistance[t]) {
+                    throw new RuntimeException();
+                }
+                if (minDistance[t] == 0) {
                     playerDistances[playerPos.player][t] = dist;
-                    playerDistances[MIN_INDEX][t] = dist;
-                    positionCounts[playerPos.player]++;
+                    minDistance[t] = dist;
+                    if(b.tileToPos(playerPos.tile).isBlack()) {
+                        blackCount[playerPos.player]++;
+                    } else {
+                        whiteCount[playerPos.player]++;
+                    }
                     queue.add(new PlayerTilePair(playerPos.player, t));
                 }
             });
         }
-        return positionCounts;
+        for(int player : b.getAlivePlayers(playersTurn)) {
+            int wc = whiteCount[player];
+            int bc = blackCount[player];
+            int min = Math.min(wc, bc);
+            int maxMoves = min*  2;
+            if(wc < bc && !b.tileToPos(b.ourTile()).isBlack()) {
+                maxMoves++;
+            } else if(bc < wc && b.tileToPos(b.ourTile()).isBlack()) {
+                maxMoves++;
+            }
+            // Reused the whitecount array to save space.
+            whiteCount[player] = maxMoves;
+        }
+        return whiteCount;
     }
 
     public static class ConnectedComponents {
@@ -465,15 +492,18 @@ class Board {
     }
 
     public List<Integer> getAlivePlayers() {
+        return getAlivePlayers(US);
+    }
+    public List<Integer> getAlivePlayers(int startingWithPlayer) {
         List<Integer> alivePlayers = new ArrayList<>();
         boolean finished = false;
-        int p = US;
+        int p = startingWithPlayer;
         while(!finished) {
             if(isAlive(p)) {
                 alivePlayers.add(p);
             }
             p = (p + 1) % playerCount;
-            if(p == US) {
+            if(p == startingWithPlayer) {
                 finished = true;
             }
         }
@@ -896,15 +926,15 @@ class VoronoiMinMax implements Driver {
     private MinMax.Score countAvailableSpaces = new MinMax.Score() {
         public int eval(Board b, int player) {
             int spaceCount;
-            spaceCount = BoardUtil.playerZoneCounts(b)[b.US];
+            spaceCount = BoardUtil.playerZoneCounts(b, player)[b.US];
             return spaceCount;
         }
 
-        public int eval2(Board b) {
+        public int eval2(Board b, int player) {
             int[] playerSpaces = new int[b.getAliveCount()];
             boolean inclusive = false;
             boolean[] outOfBounds = BoardUtil.battlefield(b, inclusive);
-            for(int p : b.getAlivePlayers()) {
+            for(int p : b.getAlivePlayers(player)) {
                 int spaceCount;
                 if(outOfBounds == null) {
                     spaceCount = BoardUtil.availableSpaces(b, p);
