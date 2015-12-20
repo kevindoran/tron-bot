@@ -89,6 +89,22 @@ class InputParser {
         update(current, startup);
     }
 
+    private class Input {
+        private int x0;
+        private int x1;
+        private int y0;
+        private int y1;
+        private int player;
+
+        public Input(int player, int x0, int y0, int x1, int y1) {
+            this.player = player;
+            this.x0 = x0;
+            this.x1 = x1;
+            this.y0 = y0;
+            this.y1 = y1;
+        }
+    }
+
     public void update(Board current, boolean startup) {
         // On startup, the first two integer inputs have already been consumed. If not startup, throw them away.
         if (!startup) {
@@ -97,22 +113,36 @@ class InputParser {
             int playerCount = in.nextInt();
             int us = in.nextInt();
         }
+        Input[] input = new Input[current.getPlayerCount()];
         for (int i = 0; i < current.getPlayerCount(); i++) {
             int x0 = in.nextInt();
             int y0 = in.nextInt();
             int x1 = in.nextInt();
             int y1 = in.nextInt();
+            input[i] = new Input(i, x0, y0, x1, y1);
+        }
+        // Need to clear any player first, as another player may be moving into their place, which must be marked as
+        // 'free' ASAP.
+        for(Input i : input) {
+            if (i.x1 == -1) {
+                current.clear(i.player);
+            }
+        }
+        for(Input i : input) {
+            if(i.x1 == -1) {
+                continue;
+            }
             // People may have already moved since your turn, so best to mark their origins before moving them again.
             if (startup) {
-                current.move(i, x0, y0);
+                current.move(i.player, i.x0, i.y0);
             }
             // A player is dead if it has -1 for a coordinate.
-            if (x0 == -1) {
-                current.clear(i);
+            if (i.x0 == -1) {
+                current.clear(i.player);
             } else {
 //                System.err.println("Moving: " + i + " to: (" + x1 + ", " + y1 + ")");
                 // Board counts players starting at 1.
-                current.move(i, x1, y1);
+                current.move(i.player, i.x1, i.y1);
             }
         }
     }
