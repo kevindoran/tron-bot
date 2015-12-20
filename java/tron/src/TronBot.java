@@ -137,7 +137,6 @@ class BoardUtil {
         boolean foundOpponent = false;
         while(!queue.isEmpty() && !foundOpponent) {
             int next = queue.poll();
-            System.err.println(next);
             for(int n : b.neighbours(next).boxed().collect(Collectors.toList())) {
                 if(!marked.contains(n)) {
                     for(int i = 0; i < b.getPlayerCount(); i++) {
@@ -508,7 +507,6 @@ class Board {
     }
 
     public void move(int player, int x, int y) {
-        System.err.println(String.format("Move to %s %s", x, y));
         int tile = xyToTile(x, y);
         if(playerTile(player) == tile) {
             return;
@@ -516,7 +514,6 @@ class Board {
         if(!isFree(tile)) {
             boolean isDead = true;
             moveHistory.push(new Move(player, playerTile(player), isDead));
-            System.err.println("Cleared");
             clear(player);
         } else {
             moveHistory.push(new Move(player, playerTile(player)));
@@ -681,17 +678,12 @@ class StaySafeDriver implements Driver {
         for (Direction d : Direction.values()) {
             int neighbourTile = board.tileFrom(board.ourTile(), d);
             boolean isValid = neighbourTile != -1;
-            if(!isValid) {
-                System.err.println("A");
-            }
             if(isValid && board.isFree(neighbourTile)) {
 //                System.err.print("Moving to the " + d);
-                System.err.println("B");
                 direction = d;
                 break;
             }
         }
-        System.err.println(direction);
         return direction;
     }
 }
@@ -700,6 +692,42 @@ interface Filter {
     Set<Direction> filterBadMoves(Board b, Set<Direction> moves);
 }
 
+
+class AvoidCutVertices implements Filter {
+
+    @Override
+    public Set<Direction> filterBadMoves(Board b, Set<Direction> moves) {
+        Map<Integer, Integer> tileToScores = new HashMap<>();
+        int max = -1;
+        for(int n : b.freeNeighbours(b.ourTile()).boxed().collect(Collectors.toList())) {
+            tileToScores.put(n, -1);
+            b.move(b.US, n);
+            int localMax = -1;
+            for(int n2 : b.freeNeighbours(b.ourTile()).boxed().collect(Collectors.toList())) {
+                b.move(b.US, n2);
+                int spaces = BoardUtil.availableSpaces(b, b.US);
+                if(spaces > localMax) {
+                    localMax = spaces;
+                }
+                b.undoMove();
+            }
+            if(localMax > max) {
+                max = localMax;
+            }
+            tileToScores.put(n, localMax);
+
+            b.undoMove();
+        }
+        final int tempMax = max;
+        Set<Direction> filtered = moves.stream().filter(m -> {
+            int tile = b.tileFrom(b.ourTile(), m);
+            // The tile may not be in the map if it was not a free neighbour. Thus, death moves
+            // are also filtered here.
+            return tileToScores.containsKey(tile) && tileToScores.get(tile) == tempMax;
+        }).collect(Collectors.toSet());
+        return filtered;
+    }
+}
 class AvoidSmallComponents implements Filter {
 
     @Override
@@ -753,10 +781,14 @@ class AvoidSmallComponents implements Filter {
 class WallHuggingDriver implements Driver {
     private StaySafeDriver backupDriver = new StaySafeDriver();
     private Filter deadEndFilter = new AvoidSmallComponents();
+    private Filter avoidCutVerticesFilter = new AvoidCutVertices();
     @Override
     public Direction move(Board board) {
-        Direction direction;
-        Set<Direction> okayDirections = deadEndFilter.filterBadMoves(board, new HashSet<>(Arrays.asList(Direction.values())));
+        Set<Direction> okayDirections = avoidCutVerticesFilter.filterBadMoves(board, new HashSet<>(Arrays.asList(Direction.values())));
+        // If there are no options but to enter a cut vertex, choose the best component.
+        if(okayDirections.size() == 0) {
+            okayDirections = deadEndFilter.filterBadMoves(board, new HashSet<>(Arrays.asList(Direction.values())));
+        }
         for(Direction d : Direction.values()) {
             if(!okayDirections.contains(d)) {
                 continue;
@@ -942,6 +974,7 @@ class MinMax {
         int minPos = -1;
         Board maxBoard = null;
         boolean firstRun = true;
+        boolean maximize = player == b.US;
         for (int n : freeNeighbours) {
             b.move(player, n);
             // Adding one favours living longer in case all options end in death.
@@ -961,7 +994,6 @@ class MinMax {
             }
             firstRun = false;
         }
-        boolean maximize = player == b.US;
         if (maximize) {
             assert maxPos != -1;
             return new PosScore(maxPos, max, maxBoard);

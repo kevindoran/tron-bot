@@ -28,9 +28,9 @@ public class BoardUtilTest {
      *   1h x  0  0
      */
     public void isAloneInComponentTest() {
-        boardA.move(1, 0, 3);
-        assertTrue(BoardUtil.isAloneInComponent(boardA));
         boardA.move(0, 3, 3);
+        assertTrue(BoardUtil.isAloneInComponent(boardA));
+        boardA.move(1, 0, 3);
         boardA.move(0, 2, 3);
         boardA.move(0, 2, 2);
         boardA.move(0, 2, 1);
