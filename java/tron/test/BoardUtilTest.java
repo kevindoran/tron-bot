@@ -69,8 +69,9 @@ public class BoardUtilTest {
                 "b  a  a  0h 0\n";
         Board b = Board.fromString(boardStr);
         int[] zoneCounts = BoardUtil.playerZoneCounts(b, b.US);
-        assertEquals(5, zoneCounts[0]);
-        assertEquals(7, zoneCounts[1]);
+        assertEquals(4, zoneCounts[0]);
+        assertEquals(6, zoneCounts[1]);
+        // This is actually better to be 4. Room for improvement.
         assertEquals(5, zoneCounts[2]);
     }
 

@@ -31,11 +31,11 @@ public class VoronoiMinMaxTest {
     @Test
     public void testMoveCornered() {
         String boardStr =
-                "2h  x  0  x  x\n" +
+                "2h x  0  x  x\n" +
                 "x  x  0  x  x\n" +
-                "x  x  0h  1  1\n" +
+                "x  x  0h 1  1\n" +
                 "x  x  x  1  x\n" +
-                "x  1h  1  1  x";
+                "x  1h 1  1  x";
         Board b = Board.fromString(boardStr);
         Driver d = new VoronoiMinMax();
         Direction move = d.move(b);

@@ -290,7 +290,7 @@ class BoardUtil {
                 if (minDistance[t] == 0) {
                     playerDistances[playerPos.player][t] = dist;
                     minDistance[t] = dist;
-                    if(b.tileToPos(playerPos.tile).isBlack()) {
+                    if(b.tileToPos(t).isBlack()) {
                         blackCount[playerPos.player]++;
                     } else {
                         whiteCount[playerPos.player]++;
@@ -304,9 +304,9 @@ class BoardUtil {
             int bc = blackCount[player];
             int min = Math.min(wc, bc);
             int maxMoves = min*  2;
-            if(wc < bc && !b.tileToPos(b.ourTile()).isBlack()) {
+            if(wc < bc && !b.tileToPos(b.playerTile(player)).isBlack()) {
                 maxMoves++;
-            } else if(bc < wc && b.tileToPos(b.ourTile()).isBlack()) {
+            } else if(bc < wc && b.tileToPos(b.playerTile(player)).isBlack()) {
                 maxMoves++;
             }
             // Reused the whitecount array to save space.
@@ -754,7 +754,6 @@ interface Filter {
 
 
 class AvoidCutVertices implements Filter {
-
     @Override
     public Set<Direction> filterBadMoves(Board b, Set<Direction> moves) {
         Map<Integer, Integer> tileToScores = new HashMap<>();
@@ -789,7 +788,6 @@ class AvoidCutVertices implements Filter {
     }
 }
 class AvoidSmallComponents implements Filter {
-
     @Override
     public Set<Direction> filterBadMoves(Board board, Set<Direction> moves) {
         int[] connectedComponents = new int[board.width*board.height];
@@ -844,12 +842,14 @@ class WallHuggingDriver implements Driver {
     private Filter avoidCutVerticesFilter = new AvoidCutVertices();
     @Override
     public Direction move(Board board) {
-        Set<Direction> okayDirections = avoidCutVerticesFilter.filterBadMoves(board, new HashSet<>(Arrays.asList(Direction.values())));
+        Set<Direction> okayDirections = avoidCutVerticesFilter.filterBadMoves(board,
+                new HashSet<>(Arrays.asList(Direction.values())));
         // If there are no options but to enter a cut vertex, choose the best component.
         if(okayDirections.size() == 0) {
             okayDirections = deadEndFilter.filterBadMoves(board, new HashSet<>(Arrays.asList(Direction.values())));
         }
         for(Direction d : Direction.values()) {
+            System.err.println(d);
             if(!okayDirections.contains(d)) {
                 continue;
             }
@@ -937,7 +937,7 @@ class VoronoiMinMax implements Driver {
 
     @Override
     public Direction move(Board board) {
-        int depth = 4;
+        int depth = 5;
         Direction bestMove;
         // If someone dies, the board can open up with new space.
         if(playerCount != board.getAliveCount()) {
@@ -991,7 +991,6 @@ class VoronoiMinMax implements Driver {
 }
 
 class MinMax {
-
     public interface Score {
         int eval(Board b, int player);
     }
@@ -1011,15 +1010,15 @@ class MinMax {
     public static Direction minMax(Board b, Score score, int depth) {
         int currentStep = 0;
         int player = b.US;
-        int position =  _minMax(b, score, depth, player, currentStep).pos;
+        int position =  _minMax(b, score, depth, player, currentStep, -1, -1).pos;
         Direction bestDirection = b.tileToPos(b.ourTile()).directionTo(b.tileToPos(position));
         return bestDirection;
     }
 
 
-    private static PosScore _minMax(Board b, Score score, int depth, int player, int currentStep) {
+    private static PosScore _minMax(Board b, Score score, int depth, int player, int currentStep, int alpha, int beta) {
         int attempts = 0;
-        while(!b.isAlive(player)) {
+        while (!b.isAlive(player)) {
             player = (player + 1) % b.getPlayerCount();
             attempts++;
             assert attempts < b.getPlayerCount();
@@ -1028,38 +1027,44 @@ class MinMax {
         if (currentStep == depth || freeNeighbours.isEmpty()) {
             return new PosScore(b.ourTile(), score.eval(b, player), new Board(b));
         }
-        int max = 0;
-        int maxPos = -1;
-        int min = -1;
-        int minPos = -1;
-        Board maxBoard = null;
-        boolean firstRun = true;
         boolean maximize = player == b.US;
-        for (int n : freeNeighbours) {
-            b.move(player, n);
-            // Adding one favours living longer in case all options end in death.
-            PosScore posScore = _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1);
-            int s = posScore.score;
-            Board leafBoard = posScore.board;
-//            int s = score.eval(leafBoard, player);
-            b.undoMove();
-            if (s < min || firstRun) {
-                min = s;
-                minPos = n;
-            }
-            if (s > max || firstRun) {
-                max = s;
-                maxPos = n;
-                maxBoard = leafBoard;
-            }
-            firstRun = false;
-        }
         if (maximize) {
-            assert maxPos != -1;
-            return new PosScore(maxPos, max, maxBoard);
+            PosScore localMax = null;
+            for (int n : freeNeighbours) {
+                b.move(player, n);
+                PosScore posScore = _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1, alpha, beta);
+                // Adding one favours living longer in case all options end in death.
+                posScore.score++;
+                b.undoMove();
+                if (localMax == null || posScore.score > localMax.score) {
+                    localMax = new PosScore(n, posScore.score, posScore.board);
+                }
+                if(alpha == -1 || localMax.score > alpha) {
+                    alpha = localMax.score;
+                }
+                if (beta != -1 && alpha >= beta) {
+                    break;
+                }
+            }
+            return localMax;
         } else {
-            assert minPos != -1;
-            return new PosScore(minPos, min, maxBoard);
+            // Minimize.
+            PosScore localMin = null;
+            for (int n : freeNeighbours) {
+                b.move(player, n);
+                PosScore posScore = _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1, alpha, beta);
+                b.undoMove();
+                if (localMin == null || posScore.score < localMin.score) {
+                    localMin = new PosScore(n, posScore.score, posScore.board);
+                }
+                if(beta == -1 || localMin.score < beta) {
+                    beta = localMin.score;
+                }
+                if (alpha != -1 && beta <= alpha) {
+                    break;
+                }
+            }
+            return localMin;
         }
     }
 }
