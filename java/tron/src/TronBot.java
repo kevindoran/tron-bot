@@ -304,9 +304,9 @@ class BoardUtil {
             int bc = blackCount[player];
             int min = Math.min(wc, bc);
             int maxMoves = min*  2;
-            if(wc < bc && !b.tileToPos(b.playerTile(player)).isBlack()) {
+            if(wc < bc && !b.tileToPos(b.ourTile()).isBlack()) {
                 maxMoves++;
-            } else if(bc < wc && b.tileToPos(b.playerTile(player)).isBlack()) {
+            } else if(bc < wc && b.tileToPos(b.ourTile()).isBlack()) {
                 maxMoves++;
             }
             // Reused the whitecount array to save space.
