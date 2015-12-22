@@ -466,9 +466,9 @@ class Board {
 
     public Board(Board toCopy) {
         this(toCopy.width, toCopy.height, toCopy.playerCount, toCopy.US);
-        this.floor = toCopy.floor;
+        this.floor = Arrays.copyOf(toCopy.floor, toCopy.floor.length);
         this.aliveCount = toCopy.aliveCount;
-        this.playerTile = toCopy.playerTile;
+        this.playerTile = Arrays.copyOf(toCopy.playerTile, toCopy.playerTile.length);
         this.moveHistory = new Stack<>();
         this.moveHistory.addAll(toCopy.moveHistory);
     }
@@ -998,19 +998,17 @@ class MinMax {
     private static class PosScore {
         int pos;
         int score;
-        Board board;
 
-        public PosScore(int pos, int score, Board b) {
+        public PosScore(int pos, int score) {
             this.pos = pos;
             this.score = score;
-            this.board = b;
         }
     }
 
     public static Direction minMax(Board b, Score score, int depth) {
         int currentStep = 0;
         int player = b.US;
-        int position =  _minMax(b, score, depth, player, currentStep, -1, -1).pos;
+        int position = _minMax(b, score, depth, player, currentStep, -1, -1).pos;
         Direction bestDirection = b.tileToPos(b.ourTile()).directionTo(b.tileToPos(position));
         return bestDirection;
     }
@@ -1025,7 +1023,7 @@ class MinMax {
         }
         List<Integer> freeNeighbours = b.freeNeighbours(b.playerTile(player)).boxed().collect(Collectors.toList());
         if (currentStep == depth || freeNeighbours.isEmpty()) {
-            return new PosScore(b.ourTile(), score.eval(b, player), new Board(b));
+            return new PosScore(b.ourTile(), score.eval(b, player));
         }
         boolean maximize = player == b.US;
         if (maximize) {
@@ -1034,12 +1032,12 @@ class MinMax {
                 b.move(player, n);
                 PosScore posScore = _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1, alpha, beta);
                 // Adding one favours living longer in case all options end in death.
-                posScore.score++;
+//                posScore.score++;
                 b.undoMove();
                 if (localMax == null || posScore.score > localMax.score) {
-                    localMax = new PosScore(n, posScore.score, posScore.board);
+                    localMax = new PosScore(n, posScore.score);
                 }
-                if(alpha == -1 || localMax.score > alpha) {
+                if (alpha == -1 || localMax.score > alpha) {
                     alpha = localMax.score;
                 }
                 if (beta != -1 && alpha >= beta) {
@@ -1055,9 +1053,9 @@ class MinMax {
                 PosScore posScore = _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1, alpha, beta);
                 b.undoMove();
                 if (localMin == null || posScore.score < localMin.score) {
-                    localMin = new PosScore(n, posScore.score, posScore.board);
+                    localMin = new PosScore(n, posScore.score);
                 }
-                if(beta == -1 || localMin.score < beta) {
+                if (beta == -1 || localMin.score < beta) {
                     beta = localMin.score;
                 }
                 if (alpha != -1 && beta <= alpha) {
