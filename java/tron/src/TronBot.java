@@ -842,16 +842,31 @@ class WallHuggingDriver implements Driver {
     private Filter avoidCutVerticesFilter = new AvoidCutVertices();
     @Override
     public Direction move(Board board) {
+        System.err.println("A");
         Set<Direction> okayDirections = avoidCutVerticesFilter.filterBadMoves(board,
                 new HashSet<>(Arrays.asList(Direction.values())));
         // If there are no options but to enter a cut vertex, choose the best component.
         if(okayDirections.size() == 0) {
-            okayDirections = deadEndFilter.filterBadMoves(board, new HashSet<>(Arrays.asList(Direction.values())));
+            System.err.println("B");
+            okayDirections = new HashSet<>(Arrays.asList(Direction.values()));
+        }
+        Set<Direction> okayDirections2 = deadEndFilter.filterBadMoves(board, new HashSet<>(Arrays.asList(Direction.values())));
+        okayDirections.retainAll(okayDirections2);
+        if(okayDirections.size() == 0) {
+            System.err.println("C");
+            okayDirections = new HashSet<>(Arrays.asList(Direction.values()));
+            okayDirections = deadEndFilter.filterBadMoves(board, new HashSet<>(okayDirections));
+        }
+        if(okayDirections.size() == 0) {
+            System.err.println("D");
+            okayDirections = new HashSet<>(Arrays.asList(Direction.values()));
         }
         for(Direction d : Direction.values()) {
             if(!okayDirections.contains(d)) {
+                System.err.println("E");
                 continue;
             }
+            System.err.println("F");
             int tile = board.tileFrom(board.ourTile(), d);
             boolean isValid = tile != -1;
             if (isValid && board.isFree(tile)) {
