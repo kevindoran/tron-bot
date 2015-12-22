@@ -304,9 +304,9 @@ class BoardUtil {
             int bc = blackCount[player];
             int min = Math.min(wc, bc);
             int maxMoves = min*  2;
-            if(wc < bc && !b.tileToPos(b.ourTile()).isBlack()) {
+            if(wc < bc && !b.tileToPos(b.playerTile(player)).isBlack()) {
                 maxMoves++;
-            } else if(bc < wc && b.tileToPos(b.ourTile()).isBlack()) {
+            } else if(bc < wc && b.tileToPos(b.playerTile(player)).isBlack()) {
                 maxMoves++;
             }
             // Reused the whitecount array to save space.
@@ -849,7 +849,6 @@ class WallHuggingDriver implements Driver {
             okayDirections = deadEndFilter.filterBadMoves(board, new HashSet<>(Arrays.asList(Direction.values())));
         }
         for(Direction d : Direction.values()) {
-            System.err.println(d);
             if(!okayDirections.contains(d)) {
                 continue;
             }
@@ -1040,7 +1039,7 @@ class MinMax {
                 if (alpha == -1 || localMax.score > alpha) {
                     alpha = localMax.score;
                 }
-                if (beta != -1 && alpha >= beta) {
+                if (beta != -1 && alpha <= beta) {
                     break;
                 }
             }
@@ -1058,7 +1057,7 @@ class MinMax {
                 if (beta == -1 || localMin.score < beta) {
                     beta = localMin.score;
                 }
-                if (alpha != -1 && beta <= alpha) {
+                if (beta <= alpha) {
                     break;
                 }
             }
