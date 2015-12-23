@@ -103,6 +103,11 @@ class InputParser {
             this.y0 = y0;
             this.y1 = y1;
         }
+
+        @Override
+        public String toString() {
+            return String.format("%d, %d, %d, %d", x0, y0, x1, y1);
+        }
     }
 
     public void update(Board current, boolean startup) {
@@ -545,6 +550,10 @@ class Board {
     }
 
     public void clear(int player) {
+        // Don't delete twice.
+        if(playerTile[player] == DEAD) {
+            return;
+        }
         for (int i = 0; i < floor.length; i++) {
             if (floor[i] == player) {
                 floor[i] = EMPTY;
@@ -951,7 +960,7 @@ class VoronoiMinMax implements Driver {
 
     @Override
     public Direction move(Board board) {
-        int depth = 5;
+        int depth = 4;
         Direction bestMove;
         // If someone dies, the board can open up with new space.
         if(playerCount != board.getAliveCount()) {
@@ -1030,19 +1039,30 @@ class MinMax {
 
     private static PosScore _minMax(Board b, Score score, int depth, int player, int currentStep, int alpha, int beta) {
         int attempts = 0;
+        if(b.getAliveCount() == 1) {
+            return new PosScore(b.ourTile(), new Double(BoardUtil.availableSpaces(b, player) * 200).intValue());
+        }
         while (!b.isAlive(player)) {
             player = (player + 1) % b.getPlayerCount();
             attempts++;
             assert attempts < b.getPlayerCount();
         }
         List<Integer> freeNeighbours = b.freeNeighbours(b.playerTile(player)).boxed().collect(Collectors.toList());
-        if (currentStep == depth || freeNeighbours.isEmpty()) {
+        if (currentStep == depth) {
             return new PosScore(b.ourTile(), score.eval(b, player));
+        }
+        List<Integer> toTry;
+        // If there are no free neighbours, pick a random move so that the player can die and continue the minmax.
+        if(freeNeighbours.isEmpty()) {
+            toTry = new ArrayList<>();
+            toTry.add(b.neighbours(b.playerTile(player)).findAny().getAsInt());
+        } else {
+            toTry = freeNeighbours;
         }
         boolean maximize = player == b.US;
         if (maximize) {
             PosScore localMax = null;
-            for (int n : freeNeighbours) {
+            for (int n : toTry) {
                 b.move(player, n);
                 PosScore posScore = _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1, alpha, beta);
                 // Adding one favours living longer in case all options end in death.
@@ -1055,16 +1075,20 @@ class MinMax {
                     alpha = localMax.score;
                 }
                 if (beta != -1 && alpha <= beta) {
-                    break;
+//                    break;
                 }
             }
             return localMax;
         } else {
             // Minimize.
             PosScore localMin = null;
-            for (int n : freeNeighbours) {
+            for (int n : toTry) {
                 b.move(player, n);
                 PosScore posScore = _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1, alpha, beta);
+                // Magnify the effect of a death of another player.
+                if(freeNeighbours.isEmpty()) {
+                    posScore.score = new Double(posScore.score * 1.2).intValue();
+                }
                 b.undoMove();
                 if (localMin == null || posScore.score < localMin.score) {
                     localMin = new PosScore(n, posScore.score);
@@ -1073,7 +1097,7 @@ class MinMax {
                     beta = localMin.score;
                 }
                 if (beta <= alpha) {
-                    break;
+//                    break;
                 }
             }
             return localMin;
