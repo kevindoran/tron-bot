@@ -845,37 +845,86 @@ class AvoidSmallComponents implements Filter {
     }
 }
 
+class BruteForceEndGame implements Driver {
+    private final int MAX_DEPTH = 5;
+    private boolean[] marked;
+    private int currentMax = 0;
+
+    @Override
+    public Direction move(Board board) {
+        marked = new boolean[board.getSize()];
+        marked[board.ourTile()] = true;
+        int maxPossible = BoardUtil.availableSpaces(board, board.ourTile());
+        int runToDepth = Math.min(maxPossible, MAX_DEPTH);
+        int max = 0;
+        Position maxPos = null;
+        for(int n : board.freeNeighbours(board.ourTile()).boxed().collect(Collectors.toList())) {
+            int consumed = dfs(board, n, 0, runToDepth);
+            if(consumed  > maxPossible + 1) {
+                System.err.println(String.format("Consumed (%d) is greater than max possible(%d)", consumed, maxPossible));
+            }
+            assert (consumed <= maxPossible + 1):
+                    String.format("Consumed (%d) is greater than max possible(%d)", consumed, maxPossible);
+            if (consumed == maxPossible) {
+                return board.tileToPos(board.ourTile()).directionTo(board.tileToPos(n));
+            }
+            if(consumed > max) {
+                max = consumed;
+                maxPos = board.tileToPos(n);
+            }
+        }
+        // If no free direction, choose any.
+        if(maxPos == null) {
+            return board.tileToPos(board.ourTile()).directionTo(board.tileToPos(board.neighbours(board.ourTile()).findAny().getAsInt()));
+        }
+        return board.tileToPos(board.ourTile()).directionTo(maxPos);
+    }
+
+    private int dfs(Board b, int tile, int step, int maxDepth) {
+        marked[tile] = true;
+        int max = 0;
+        int maxPossible = BoardUtil.availableSpaces(b, b.ourTile(), marked);
+        if(step == maxDepth || maxPossible == 0 || (maxPossible + 1 + step) <= currentMax) {
+            // Add 1 to include this tile.
+            max = 1 + step + BoardUtil.availableSpaces(b, tile, marked);
+        }
+        else {
+            for(int n : b.freeNeighbours(tile).filter(i -> !marked[i]).boxed().collect(Collectors.toList())) {
+                int consumed = dfs(b, n, step + 1, maxDepth);
+                max = Math.max(max, consumed);
+                currentMax = Math.max(max, currentMax);
+            }
+        }
+        marked[tile] = false;
+        return max;
+    }
+}
+
 class WallHuggingDriver implements Driver {
     private StaySafeDriver backupDriver = new StaySafeDriver();
     private Filter deadEndFilter = new AvoidSmallComponents();
     private Filter avoidCutVerticesFilter = new AvoidCutVertices();
     @Override
     public Direction move(Board board) {
-        System.err.println("A");
         Set<Direction> okayDirections = avoidCutVerticesFilter.filterBadMoves(board,
                 new HashSet<>(Arrays.asList(Direction.values())));
         // If there are no options but to enter a cut vertex, choose the best component.
         if(okayDirections.size() == 0) {
-            System.err.println("B");
             okayDirections = new HashSet<>(Arrays.asList(Direction.values()));
         }
         Set<Direction> okayDirections2 = deadEndFilter.filterBadMoves(board, new HashSet<>(Arrays.asList(Direction.values())));
         okayDirections.retainAll(okayDirections2);
         if(okayDirections.size() == 0) {
-            System.err.println("C");
             okayDirections = new HashSet<>(Arrays.asList(Direction.values()));
             okayDirections = deadEndFilter.filterBadMoves(board, new HashSet<>(okayDirections));
         }
         if(okayDirections.size() == 0) {
-            System.err.println("D");
             okayDirections = new HashSet<>(Arrays.asList(Direction.values()));
         }
         for(Direction d : Direction.values()) {
             if(!okayDirections.contains(d)) {
-                System.err.println("E");
                 continue;
             }
-            System.err.println("F");
             int tile = board.tileFrom(board.ourTile(), d);
             boolean isValid = tile != -1;
             if (isValid && board.isFree(tile)) {
@@ -968,6 +1017,7 @@ class VoronoiMinMax implements Driver {
             playerCount = board.getAliveCount();
         }
         if(backupEnabled || BoardUtil.isAloneInComponent(board)) {
+            System.err.println("Backup enabled");
             backupEnabled = true;
             bestMove = backupDriver.move(board);
         } else {
@@ -1039,21 +1089,26 @@ class MinMax {
 
     private static PosScore _minMax(Board b, Score score, int depth, int player, int currentStep, int alpha, int beta) {
         int attempts = 0;
-        if(b.getAliveCount() == 1) {
-            return new PosScore(b.ourTile(), new Double(BoardUtil.availableSpaces(b, player) * 200).intValue());
-        }
         while (!b.isAlive(player)) {
             player = (player + 1) % b.getPlayerCount();
             attempts++;
             assert attempts < b.getPlayerCount();
         }
-        List<Integer> freeNeighbours = b.freeNeighbours(b.playerTile(player)).boxed().collect(Collectors.toList());
+        if(b.getAliveCount() == 1) {
+            assert player == b.US;
+            return new PosScore(b.ourTile(), new Double(BoardUtil.availableSpaces(b, b.ourTile()) * 200).intValue());
+        }
         if (currentStep == depth) {
             return new PosScore(b.ourTile(), score.eval(b, player));
         }
+        List<Integer> freeNeighbours = b.freeNeighbours(b.playerTile(player)).boxed().collect(Collectors.toList());
         List<Integer> toTry;
-        // If there are no free neighbours, pick a random move so that the player can die and continue the minmax.
+        // If there are no free neighbours, if it is not us,
+        // pick a random move so that the player can die and continue the minmax.
         if(freeNeighbours.isEmpty()) {
+            if(player == b.US) {
+                return new PosScore(b.ourTile(), 0);
+            }
             toTry = new ArrayList<>();
             toTry.add(b.neighbours(b.playerTile(player)).findAny().getAsInt());
         } else {
@@ -1062,7 +1117,14 @@ class MinMax {
         boolean maximize = player == b.US;
         if (maximize) {
             PosScore localMax = null;
-            for (int n : toTry) {
+            assert !freeNeighbours.isEmpty();
+            freeNeighbours.sort(new Comparator<Integer>() {
+                @Override
+                public int compare(Integer o1, Integer o2) {
+                    return new Long(b.freeNeighbours(o2).count()).compareTo(new Long(b.freeNeighbours(o1).count()));
+                }
+            });
+            for (int n : freeNeighbours) {
                 b.move(player, n);
                 PosScore posScore = _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1, alpha, beta);
                 // Adding one favours living longer in case all options end in death.
@@ -1075,13 +1137,19 @@ class MinMax {
                     alpha = localMax.score;
                 }
                 if (beta != -1 && alpha <= beta) {
-//                    break;
+                    break;
                 }
             }
             return localMax;
         } else {
             // Minimize.
             PosScore localMin = null;
+            toTry.sort(new Comparator<Integer>() {
+                @Override
+                public int compare(Integer o1, Integer o2) {
+                    return new Long(b.freeNeighbours(o1).count()).compareTo(new Long(b.freeNeighbours(o2).count()));
+                }
+            });
             for (int n : toTry) {
                 b.move(player, n);
                 PosScore posScore = _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1, alpha, beta);
@@ -1097,7 +1165,7 @@ class MinMax {
                     beta = localMin.score;
                 }
                 if (beta <= alpha) {
-//                    break;
+                    break;
                 }
             }
             return localMin;
