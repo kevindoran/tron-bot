@@ -996,7 +996,8 @@ class Voronoi implements Driver {
 
 class VoronoiMinMax implements Driver {
 
-    private Driver backupDriver = new WallHuggingDriver();
+//    private Driver backupDriver = new WallHuggingDriver();
+    private Driver backupDriver = new BruteForceEndGame();
     private boolean backupEnabled = false;
     private int playerCount = 0;
 
