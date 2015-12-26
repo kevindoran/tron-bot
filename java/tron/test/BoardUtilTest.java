@@ -42,6 +42,17 @@ public class BoardUtilTest {
     }
 
     @Test
+    public void isAloneInComponentTest2() {
+        Board b = Board.fromString(
+                "x  x  x  x  x\n" +
+                "0h x  x  x  x\n" +
+                "0  0  0  0  0\n" +
+                "x  x  x  x  2h\n" +
+                "1h x  x  x  2\n");
+        assertTrue(BoardUtil.isAloneInComponent(b));
+    }
+
+    @Test
     public void testBattlefield() {
         boardA.move(0, 0, 0);
         boardA.move(1, 3, 3);

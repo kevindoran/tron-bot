@@ -47,12 +47,12 @@ public class BoardTest {
         assertEquals(2, boardA.getAliveCount());
         boardA.move(1, 2, 3);
         assertEquals(1, boardA.getAliveCount());
-        assertEquals(18, BoardUtil.availableSpaces(boardA, 0));
+        assertEquals(18, BoardUtil.availableSpaces(boardA, boardA.playerTile(0)));
 //        assertEquals(0, BoardUtil.availableSpaces(b, 1));
         boardA.undoMove();
         assertEquals(2, boardA.getAliveCount());
         assertEquals(16, boardA.playerTile(1));
-        assertEquals(0, BoardUtil.availableSpaces(boardA, 0));
-        assertEquals(12, BoardUtil.availableSpaces(boardA, 1));
+        assertEquals(0, BoardUtil.availableSpaces(boardA, boardA.playerTile(0)));
+        assertEquals(12, BoardUtil.availableSpaces(boardA, boardA.playerTile(1)));
     }
 }

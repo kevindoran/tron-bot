@@ -155,13 +155,13 @@ class InputParser {
 
 class BoardUtil {
 
-    public static int availableSpaces(Board b, int player) {
+    public static int availableSpaces(Board b, int tile) {
         boolean [] noOutOfBounds = new boolean[b.getSize()];
-        return availableSpaces(b, player, noOutOfBounds);
+        return availableSpaces(b, tile, noOutOfBounds);
     }
 
-    public static int availableSpaces(Board b, int player, boolean[] outOfBounds) {
-        ConnectedComponents cc = new ConnectedComponents(b, b.playerTile(player), outOfBounds);
+    public static int availableSpaces(Board b, int tile, boolean[] outOfBounds) {
+        ConnectedComponents cc = new ConnectedComponents(b, tile, outOfBounds);
         return cc.getMaxMoves();
     }
 
@@ -272,15 +272,13 @@ class BoardUtil {
         int[] whiteCount = new int[b.getPlayerCount()];
         int[] blackCount = new int[b.getPlayerCount()];
         int[] minDistance = new int[b.getSize()];
-        int[] firstReachingPlayer = new int[b.getSize()];
-        int longestDistance = 0;
         Queue<PlayerTilePair> queue = new LinkedList<>();
         for(int p : b.getAlivePlayers(playersTurn)) {
             queue.add(new PlayerTilePair(p, b.playerTile(p)));
         }
         while(!queue.isEmpty()) {
             PlayerTilePair playerPos = queue.poll();
-            b.freeNeighbours(playerPos.tile).filter((t) -> playerDistances[playerPos.player][t] == 0).forEach((t) -> {
+            b.freeNeighbours(playerPos.tile).filter((t) -> minDistance[t] == 0).forEach((t) -> {
                 int dist = playerDistances[playerPos.player][playerPos.tile] + 1;
                 // If two players are the same distance, the one who's turn is first will claim the tile first. The tile
                 // will be within the reachable bound of the first player, but not the second. An explicit check isn't
@@ -289,19 +287,14 @@ class BoardUtil {
 //                if(beatenByTurnOrder) {
 //                    throw new RuntimeException();
 //                }
-                if(dist < minDistance[t]) {
-                    throw new RuntimeException();
+                playerDistances[playerPos.player][t] = dist;
+                minDistance[t] = dist;
+                if(b.tileToPos(t).isBlack()) {
+                    blackCount[playerPos.player]++;
+                } else {
+                    whiteCount[playerPos.player]++;
                 }
-                if (minDistance[t] == 0) {
-                    playerDistances[playerPos.player][t] = dist;
-                    minDistance[t] = dist;
-                    if(b.tileToPos(t).isBlack()) {
-                        blackCount[playerPos.player]++;
-                    } else {
-                        whiteCount[playerPos.player]++;
-                    }
-                    queue.add(new PlayerTilePair(playerPos.player, t));
-                }
+                queue.add(new PlayerTilePair(playerPos.player, t));
             });
         }
         for(int player : b.getAlivePlayers(playersTurn)) {
@@ -773,7 +766,7 @@ class AvoidCutVertices implements Filter {
             int localMax = -1;
             for(int n2 : b.freeNeighbours(b.ourTile()).boxed().collect(Collectors.toList())) {
                 b.move(b.US, n2);
-                int spaces = BoardUtil.availableSpaces(b, b.US);
+                int spaces = BoardUtil.availableSpaces(b, b.ourTile());
                 if(spaces > localMax) {
                     localMax = spaces;
                 }
@@ -1040,9 +1033,9 @@ class VoronoiMinMax implements Driver {
             for(int p : b.getAlivePlayers(player)) {
                 int spaceCount;
                 if(outOfBounds == null) {
-                    spaceCount = BoardUtil.availableSpaces(b, p);
+                    spaceCount = BoardUtil.availableSpaces(b, b.playerTile(p));
                 } else {
-                    spaceCount = BoardUtil.availableSpaces(b, p, outOfBounds);
+                    spaceCount = BoardUtil.availableSpaces(b, b.playerTile(p), outOfBounds);
                 }
             }
             return comparativeSurplus(b, playerSpaces);
