@@ -1,4 +1,5 @@
 import java.util.*;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -754,7 +755,6 @@ interface Filter {
     Set<Direction> filterBadMoves(Board b, Set<Direction> moves);
 }
 
-
 class AvoidCutVertices implements Filter {
     @Override
     public Set<Direction> filterBadMoves(Board b, Set<Direction> moves) {
@@ -839,19 +839,20 @@ class AvoidSmallComponents implements Filter {
 }
 
 class BruteForceEndGame implements Driver {
-    private final int MAX_DEPTH = 5;
+    private final int MAX_DEPTH = 10;
     private boolean[] marked;
     private int currentMax = 0;
 
     @Override
-    public Direction move(Board board) {
+    public Direction move(final Board board) {
         marked = new boolean[board.getSize()];
         marked[board.ourTile()] = true;
         int maxPossible = BoardUtil.availableSpaces(board, board.ourTile());
         int runToDepth = Math.min(maxPossible, MAX_DEPTH);
         int max = 0;
         Position maxPos = null;
-        for(int n : board.freeNeighbours(board.ourTile()).boxed().collect(Collectors.toList())) {
+        Comparator<Integer> sortNeighbours = Comparator.comparing(a -> board.freeNeighbours(a).count());
+        for(int n : board.freeNeighbours(board.ourTile()).boxed().sorted(sortNeighbours).collect(Collectors.toList())) {
             int consumed = dfs(board, n, 0, runToDepth);
             if(consumed  > maxPossible + 1) {
                 System.err.println(String.format("Consumed (%d) is greater than max possible(%d)", consumed, maxPossible));
@@ -876,13 +877,14 @@ class BruteForceEndGame implements Driver {
     private int dfs(Board b, int tile, int step, int maxDepth) {
         marked[tile] = true;
         int max = 0;
-        int maxPossible = BoardUtil.availableSpaces(b, b.ourTile(), marked);
+        int maxPossible = BoardUtil.availableSpaces(b, tile, marked);
         if(step == maxDepth || maxPossible == 0 || (maxPossible + 1 + step) <= currentMax) {
             // Add 1 to include this tile.
             max = 1 + step + BoardUtil.availableSpaces(b, tile, marked);
         }
         else {
-            for(int n : b.freeNeighbours(tile).filter(i -> !marked[i]).boxed().collect(Collectors.toList())) {
+            Comparator<Integer> sortNeighbours = Comparator.comparing(a -> b.freeNeighbours(a).count());
+            for(int n : b.freeNeighbours(tile).filter(i -> !marked[i]).boxed().sorted(sortNeighbours).collect(Collectors.toList())) {
                 int consumed = dfs(b, n, step + 1, maxDepth);
                 max = Math.max(max, consumed);
                 currentMax = Math.max(max, currentMax);
