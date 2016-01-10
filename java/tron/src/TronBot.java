@@ -356,6 +356,151 @@ class BoardUtil {
         return whiteCount;
     }
 
+    public static class AvailableSpace {
+        private Board board;
+        private boolean[] visited;
+        private boolean[] cutVertices;
+        private Chamber currentChamber = Chamber.root();
+        private int maxMoves;
+
+        private static class Chamber {
+            private int id;
+            private CheckerCount size;
+            private Chamber parent;
+            private List<Chamber> children = new ArrayList<>();
+            private static int nextId = 0;
+            private CheckerCount count;
+
+            private Chamber() {}
+
+            public static Chamber root() {
+                Chamber c = new Chamber();
+                c.id = nextId++;
+                c.size = new CheckerCount(null);
+                return c;
+            }
+
+            public Chamber(CheckerCount size, Chamber parent) {
+                this.id = nextId++;
+                parent.addChild(this);
+                this.parent = parent;
+                this.size = size;
+            }
+
+            public int getId() {
+                return id;
+            }
+
+            public CheckerCount getSize() {
+                return size;
+            }
+
+            public void addChild(Chamber c) {
+                children.add(c);
+            }
+
+            public List<Chamber> getChildren() {
+                return children;
+            }
+
+            public Chamber getParent() {
+                return parent;
+            }
+
+            public void setCount(CheckerCount count) {
+                this.count = count;
+            }
+        }
+
+        public AvailableSpace(Board board) {
+            this.board = board;
+            visited = new boolean[board.getSize()];
+            cutVertices = new boolean[board.getSize()];
+            CutVertices cv = new CutVertices(board);
+            cutVertices = cv.getCutVirtices();
+            dfsCount(board.ourTile());
+            maxMoves = chamberDfs(currentChamber);
+        }
+
+        private int chamberDfs(Chamber c) {
+            int count = 0;
+            for(Chamber child : c.getChildren()) {
+                count = Math.max(count, chamberDfs(child));
+            }
+            // All cut vertex points can be reached.
+            count += c.getChildren().size();
+            return count + c.getSize().getMaxMoves();
+        }
+
+        private static class CheckerCount {
+            private int black;
+            private int white;
+            private Board board;
+
+            public CheckerCount(Board board) {
+                this.board = board;
+            }
+
+            public void add(CheckerCount c) {
+                this.black+= c.black;
+                this.white+= c.white;
+            }
+
+            public void add(int tile) {
+                if(board.tileToPos(tile).isBlack()) {
+                    black++;
+                } else {
+                    white++;
+                }
+            }
+
+            public int getMaxMoves() {
+                int min = Math.min(white, black);
+                int maxMoves = min*  2;
+                if(white < black && !board.tileToPos(board.ourTile()).isBlack()) {
+                    maxMoves++;
+                } else if(black < white && board.tileToPos(board.ourTile()).isBlack()) {
+                    maxMoves++;
+                }
+                return maxMoves;
+            }
+        }
+
+        private CheckerCount dfsCount(int node) {
+            visited[node] = true;
+            if(cutVertices[node]) {
+                CheckerCount count = new CheckerCount(board);
+                for(int child : board.freeNeighbours(node).filter(c -> !visited[c]).boxed().collect(Collectors.toList())) {
+                    currentChamber = new Chamber(count, currentChamber);
+                    CheckerCount c = dfsCount(child);
+                    if(c.getMaxMoves() > count.getMaxMoves()) {
+                        count = c;
+                    }
+                }
+//                count.add(node);
+                currentChamber.setCount(count);
+                currentChamber = currentChamber.parent;
+                return new CheckerCount(board);
+            } else {
+                CheckerCount count = new CheckerCount(board);
+                for (int child : board.freeNeighbours(node).filter(c -> !visited[c]).boxed().collect(Collectors.toList())) {
+                    // possibly only need first filtered child, as otherwise it would be a cutvertex.
+                    CheckerCount c = dfsCount(child);
+                    if(c.getMaxMoves() > count.getMaxMoves()) {
+                        count = c;
+                    }
+                }
+                // Add 1 to count the current node.
+                count.add(node);
+                return count;
+            }
+        }
+
+        public int getMaxMoves() {
+            return maxMoves;
+        }
+    }
+
     public static class ConnectedComponents {
         private int connectedComponents[];
         private Map<Integer, Integer> whiteCount = new HashMap<>();
@@ -1067,7 +1212,8 @@ class VoronoiMinMax implements Driver {
     private MinMax.Score countAvailableSpaces = new MinMax.Score() {
         public int eval(Board b, int player) {
             int spaceCount;
-            spaceCount = BoardUtil.playerZoneCounts(b, player)[b.US];
+            BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(b);
+            spaceCount = availableSpace.getMaxMoves(); //BoardUtil.playerZoneCounts(b, player)[b.US];
             return spaceCount;
         }
 

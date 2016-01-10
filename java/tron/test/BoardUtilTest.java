@@ -109,6 +109,20 @@ public class BoardUtilTest {
     }
 
     @Test
+    public void testSmartAvaiableSpace() {
+        String boardStr =
+                "b  w  b  w  b  w  b\n" +
+                "w  b  1  1  1  b  w\n" +
+                "b  w  x  x  1  w  b\n" +
+                "w  b  2  x  1  0h w\n" +
+                "b  w  2  x  1  0  x\n" +
+                "w  b  2  2  2  0  x";
+        Board b = Board.fromString(boardStr);
+        BoardUtil.AvailableSpace as = new BoardUtil.AvailableSpace(b);
+        assertEquals(22, as.getMaxMoves());
+    }
+
+    @Test
     public void testConnectedComponents() {
         boardA.move(0, 0, 3);
         boardA.move(1, 3, 0);
