@@ -3,7 +3,9 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.Assert.*;
 
@@ -84,6 +86,26 @@ public class BoardUtilTest {
         assertEquals(6, zoneCounts[1]);
         // This is actually better to be 4. Room for improvement.
         assertEquals(5, zoneCounts[2]);
+    }
+
+    @Test
+    public void testCutVirtices() {
+        String boardStr =
+                "2  x  x  x  2  2  2\n" +
+                "2  2  2  2  2  x  2h\n" +
+                "x  c  c  c  c  c  x\n" +
+                "c  x  1  1  x  x  x\n" +
+                "c  1  1  1  x  x  x\n" +
+                "c  1  x  1  1  c  0h\n" +
+                "x  1h x  x  1  x  0\n";
+        Board b = Board.fromString(boardStr);
+        BoardUtil.CutVertices cv = new BoardUtil.CutVertices(b);
+        boolean[] cutVirtices = cv.getCutVirtices();
+        Integer[] cutVerticesExpected = new Integer[] {15, 16, 17, 18, 19, 21, 28, 35, 40, 41};
+        Set<Integer> expected  = new HashSet<Integer>(Arrays.asList(cutVerticesExpected));
+        for(int i = 0; i < cutVirtices.length; i++) {
+            assertEquals("Failed on index " + i, expected.contains(i), cutVirtices[i]);
+        }
     }
 
     @Test

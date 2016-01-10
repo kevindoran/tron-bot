@@ -263,6 +263,48 @@ class BoardUtil {
 
         int tile;
     }
+    // Algorithm taken from
+    // https://kartikkukreja.wordpress.com/2013/11/09/articulation-points-or-cut-vertices-in-a-graph/
+//    public static int[] findCutVertices(Board b) {
+    public static class CutVertices {
+
+        private int[] parent;
+        private int[] low;
+        private int[] visitOrder;
+        private int visited = 0;
+        private boolean[] cutVirtices;
+        private Board b;
+
+        public CutVertices(Board b) {
+            this.b = b;
+            low = new int[b.getSize()];
+            parent = new int[b.getSize()];
+            cutVirtices = new boolean[b.getSize()];
+            visitOrder = new int[b.getSize()];
+            assignLow(b.ourTile());
+        }
+
+        private void assignLow(int node) {
+            visitOrder[node] = ++visited;
+            low[node] = visitOrder[node];
+            for(int child : b.neighbours(node).filter(n -> b.isFree(n) || n == b.ourTile()).boxed().collect(Collectors.toList())) {
+                if(visitOrder[child] == 0) {
+                    parent[child] = node;
+                    assignLow(child);
+                    low[node] = Math.min(low[node], low[child]);
+                    if(low[child] >= visitOrder[node]) {
+                        cutVirtices[node] = true;
+                    }
+                } else if(parent[node] != child){
+                    low[node] = Math.min(low[child], low[node]);
+                }
+            }
+        }
+
+        public boolean[] getCutVirtices() {
+            return cutVirtices;
+        }
+    }
 
     /**
      * Calculates the space reachable by each player without crossing the battlefield. Faster than previous method
