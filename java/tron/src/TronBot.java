@@ -281,22 +281,40 @@ class BoardUtil {
             parent = new int[b.getSize()];
             cutVirtices = new boolean[b.getSize()];
             visitOrder = new int[b.getSize()];
-            assignLow(b.ourTile());
+            assignLow();
+            assert cutVirtices[b.ourTile()] == true;
         }
 
-        private void assignLow(int node) {
-            visitOrder[node] = ++visited;
-            low[node] = visitOrder[node];
-            for(int child : b.neighbours(node).filter(n -> b.isFree(n) || n == b.ourTile()).boxed().collect(Collectors.toList())) {
-                if(visitOrder[child] == 0) {
-                    parent[child] = node;
-                    assignLow(child);
-                    low[node] = Math.min(low[node], low[child]);
-                    if(low[child] >= visitOrder[node]) {
-                        cutVirtices[node] = true;
+        private void assignLow() {
+            Stack<Integer> stack = new Stack<>();
+            Stack<Integer> dfsStack = new Stack<>();
+            stack.push(b.ourTile());
+            parent[b.ourTile()] = b.ourTile();
+            while(!stack.isEmpty()) {
+                int node = stack.pop();
+                if(visitOrder[node] != 0) {
+                    continue;
+                }
+                visitOrder[node] = ++visited;
+                low[node] = visitOrder[node];
+                List<Integer> children = b.neighbours(node).filter(n -> b.isFree(n) || n == b.ourTile()).boxed().collect(Collectors.toList());
+                for (int i = 0; i < children.size(); i++) {
+                    int child = children.get(i);
+                    if (visitOrder[child] == 0) {
+                        parent[child] = node;
+                        stack.push(child);
+                        dfsStack.push(child);
+                    } else if (parent[node] != child) {
+                        low[node] = Math.min(low[child], low[node]);
                     }
-                } else if(parent[node] != child){
-                    low[node] = Math.min(low[child], low[node]);
+                }
+            }
+            while(!dfsStack.isEmpty()) {
+                Integer node = dfsStack.pop();
+                assert low[node] > 0;
+                low[parent[node]] = Math.min(low[parent[node]], low[node]);
+                if (low[node] >= visitOrder[parent[node]]) {
+                    cutVirtices[parent[node]] = true;
                 }
             }
         }
@@ -360,7 +378,7 @@ class BoardUtil {
         private Board board;
         private boolean[] visited;
         private boolean[] cutVertices;
-        private Chamber currentChamber = Chamber.root();
+        private Chamber rootChamber = Chamber.root(null);
         private int maxMoves;
 
         private static class Chamber {
@@ -373,7 +391,7 @@ class BoardUtil {
 
             private Chamber() {}
 
-            public static Chamber root() {
+            public static Chamber root(Board b) {
                 Chamber c = new Chamber();
                 c.id = nextId++;
                 c.size = new CheckerCount(null);
@@ -416,10 +434,16 @@ class BoardUtil {
             this.board = board;
             visited = new boolean[board.getSize()];
             cutVertices = new boolean[board.getSize()];
-            CutVertices cv = new CutVertices(board);
-            cutVertices = cv.getCutVirtices();
-            dfsCount(board.ourTile());
-            maxMoves = chamberDfs(currentChamber);
+            if(board.freeNeighbours(board.ourTile()).count() == 0) {
+                maxMoves = 0;
+            } else {
+                CutVertices cv = new CutVertices(board);
+                cutVertices = cv.getCutVirtices();
+                dfsCount(board.ourTile());
+                maxMoves = chamberDfs(rootChamber);
+                // An extra one is counted due to the use of a root chamber which is just a placeholder but adds one space.
+                maxMoves--;
+            }
         }
 
         private int chamberDfs(Chamber c) {
@@ -466,33 +490,50 @@ class BoardUtil {
             }
         }
 
-        private CheckerCount dfsCount(int node) {
-            visited[node] = true;
-            if(cutVertices[node]) {
-                CheckerCount count = new CheckerCount(board);
-                for(int child : board.freeNeighbours(node).filter(c -> !visited[c]).boxed().collect(Collectors.toList())) {
-                    currentChamber = new Chamber(count, currentChamber);
-                    CheckerCount c = dfsCount(child);
-                    if(c.getMaxMoves() > count.getMaxMoves()) {
-                        count = c;
-                    }
+        private static class StackScope {
+            private int node;
+            private Chamber currentChamber;
+
+            public StackScope(int node, Chamber currentChamber) {
+                this.node = node;
+                this.currentChamber = currentChamber;
+            }
+
+            public int getNode() {
+                return node;
+            }
+
+            public Chamber getCurrentChamber() {
+                return currentChamber;
+            }
+        }
+
+        private void dfsCount(int node) {
+            Stack<StackScope> stack = new Stack<>();
+            stack.push(new StackScope(node, rootChamber));
+            while (!stack.isEmpty()) {
+                StackScope sc = stack.pop();
+                node = sc.getNode();
+                if(visited[node]) {
+                    continue;
                 }
+                Chamber currentChamber = sc.getCurrentChamber();
+                visited[node] = true;
+                if (cutVertices[node]) {
+                    for (int child : board.freeNeighbours(node).filter(c -> !visited[c]).boxed().collect(Collectors.toList())) {
+                        // If a cut vertex has multiple children, and this loop runs twice, both must be chambers.
+                        CheckerCount count = new CheckerCount(board);
+                        currentChamber = new Chamber(count, currentChamber);
+                        stack.push(new StackScope(child, currentChamber));
+                    }
 //                count.add(node);
-                currentChamber.setCount(count);
-                currentChamber = currentChamber.parent;
-                return new CheckerCount(board);
-            } else {
-                CheckerCount count = new CheckerCount(board);
-                for (int child : board.freeNeighbours(node).filter(c -> !visited[c]).boxed().collect(Collectors.toList())) {
-                    // possibly only need first filtered child, as otherwise it would be a cutvertex.
-                    CheckerCount c = dfsCount(child);
-                    if(c.getMaxMoves() > count.getMaxMoves()) {
-                        count = c;
+                } else {
+                    for (int child : board.freeNeighbours(node).filter(c -> !visited[c]).boxed().collect(Collectors.toList())) {
+                        // possibly only need first filtered child, as otherwise it would be a cutvertex.
+                        stack.push(new StackScope(child, currentChamber));
                     }
+                    currentChamber.getSize().add(node);
                 }
-                // Add 1 to count the current node.
-                count.add(node);
-                return count;
             }
         }
 
