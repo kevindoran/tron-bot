@@ -378,6 +378,7 @@ class BoardUtil {
         private Board board;
         private boolean[] visited;
         private boolean[] cutVertices;
+        private boolean[] battlefield;
         private Chamber rootChamber = Chamber.root(null);
         private int maxMoves;
 
@@ -437,6 +438,7 @@ class BoardUtil {
             if(board.freeNeighbours(board.ourTile()).count() == 0) {
                 maxMoves = 0;
             } else {
+                battlefield = BoardUtil.battlefield(board);
                 CutVertices cv = new CutVertices(board);
                 cutVertices = cv.getCutVirtices();
                 dfsCount(board.ourTile());
@@ -520,7 +522,7 @@ class BoardUtil {
                 Chamber currentChamber = sc.getCurrentChamber();
                 visited[node] = true;
                 if (cutVertices[node]) {
-                    for (int child : board.freeNeighbours(node).filter(c -> !visited[c]).boxed().collect(Collectors.toList())) {
+                    for (int child : board.freeNeighbours(node).filter(c -> !visited[c] && (battlefield== null || !battlefield[c])).boxed().collect(Collectors.toList())) {
                         // If a cut vertex has multiple children, and this loop runs twice, both must be chambers.
                         CheckerCount count = new CheckerCount(board);
                         currentChamber = new Chamber(count, currentChamber);
@@ -528,7 +530,7 @@ class BoardUtil {
                     }
 //                count.add(node);
                 } else {
-                    for (int child : board.freeNeighbours(node).filter(c -> !visited[c]).boxed().collect(Collectors.toList())) {
+                    for (int child : board.freeNeighbours(node).filter(c -> !visited[c] && (battlefield == null || !battlefield[c])).boxed().collect(Collectors.toList())) {
                         // possibly only need first filtered child, as otherwise it would be a cutvertex.
                         stack.push(new StackScope(child, currentChamber));
                     }
