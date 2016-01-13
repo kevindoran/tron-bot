@@ -81,11 +81,11 @@ public class BoardUtilTest {
                 "b  b  a  a  x\n"  +
                 "b  a  a  0h 0\n";
         Board b = Board.fromString(boardStr);
-        int[] zoneCounts = BoardUtil.playerZoneCounts(b, b.US);
-        assertEquals(4, zoneCounts[0]);
-        assertEquals(6, zoneCounts[1]);
+        BoardUtil.BoardZones zones = new BoardUtil.BoardZones(b, b.US);
+        assertEquals(4, zones.getPlayerTileCount(0));
+        assertEquals(6, zones.getPlayerTileCount(1));
         // This is actually better to be 4. Room for improvement.
-        assertEquals(5, zoneCounts[2]);
+        assertEquals(5, zones.getPlayerTileCount(2));
     }
 
     @Test
@@ -119,7 +119,7 @@ public class BoardUtilTest {
                 "w  b  2  2  2h 0  x";
         Board b = Board.fromString(boardStr);
         BoardUtil.AvailableSpace as = new BoardUtil.AvailableSpace(b);
-        assertEquals(22, as.getMaxMoves());
+        assertEquals(11, as.getMaxMoves());
     }
 
     @Test

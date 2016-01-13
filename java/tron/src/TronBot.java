@@ -273,12 +273,16 @@ class BoardUtil {
         private int[] visitOrder;
         private int visited = 0;
         private boolean[] cutVirtices;
+        private BoardZones boardZones;
+//        private boolean[] battlefield;
         private Board b;
 
         public CutVertices(Board b) {
             this.b = b;
+            boardZones = new BoardZones(b, b.US);
             low = new int[b.getSize()];
             parent = new int[b.getSize()];
+//            battlefield = new boolean[b.getSize()];
             cutVirtices = new boolean[b.getSize()];
             visitOrder = new int[b.getSize()];
             assignLow();
@@ -328,59 +332,72 @@ class BoardUtil {
      * Calculates the space reachable by each player without crossing the battlefield. Faster than previous method
      * as it calculates the battlefield implicitly while counting spaces.
      */
-    public static int[] playerZoneCounts(Board b, int playersTurn) {
-        int[][] playerDistances = new int[b.getPlayerCount()][b.getSize()];
-        int[] whiteCount = new int[b.getPlayerCount()];
-        int[] blackCount = new int[b.getPlayerCount()];
-        int[] minDistance = new int[b.getSize()];
-        Queue<PlayerTilePair> queue = new LinkedList<>();
-        for(int p : b.getAlivePlayers(playersTurn)) {
-            queue.add(new PlayerTilePair(p, b.playerTile(p)));
-        }
-        while(!queue.isEmpty()) {
-            PlayerTilePair playerPos = queue.poll();
-            b.freeNeighbours(playerPos.tile).filter((t) -> minDistance[t] == 0).forEach((t) -> {
-                int dist = playerDistances[playerPos.player][playerPos.tile] + 1;
-                // If two players are the same distance, the one who's turn is first will claim the tile first. The tile
-                // will be within the reachable bound of the first player, but not the second. An explicit check isn't
-                // needed due to the order of the BFS. Assert here just to be sure.
+    public  static class BoardZones {
+        int[][] playerDistances;
+        int[] playerTileCount;
+
+        public BoardZones(Board b, int playersTurn) {
+            playerDistances = new int[b.getPlayerCount()][b.getSize()];
+            int[] whiteCount = new int[b.getPlayerCount()];
+            int[] blackCount = new int[b.getPlayerCount()];
+            int[] minDistance = new int[b.getSize()];
+            Queue<PlayerTilePair> queue = new LinkedList<>();
+            for (int p : b.getAlivePlayers(playersTurn)) {
+                queue.add(new PlayerTilePair(p, b.playerTile(p)));
+            }
+            while (!queue.isEmpty()) {
+                PlayerTilePair playerPos = queue.poll();
+                b.freeNeighbours(playerPos.tile).filter((t) -> minDistance[t] == 0).forEach((t) -> {
+                    int dist = playerDistances[playerPos.player][playerPos.tile] + 1;
+                    // If two players are the same distance, the one who's turn is first will claim the tile first. The tile
+                    // will be within the reachable bound of the first player, but not the second. An explicit check isn't
+                    // needed due to the order of the BFS. Assert here just to be sure.
 //                boolean beatenByTurnOrder = dist == minDistance[t] && firstReachingPlayer[t] < playerPos.player;
 //                if(beatenByTurnOrder) {
 //                    throw new RuntimeException();
 //                }
-                playerDistances[playerPos.player][t] = dist;
-                minDistance[t] = dist;
-                if(b.tileToPos(t).isBlack()) {
-                    blackCount[playerPos.player]++;
-                } else {
-                    whiteCount[playerPos.player]++;
-                }
-                queue.add(new PlayerTilePair(playerPos.player, t));
-            });
-        }
-        for(int player : b.getAlivePlayers(playersTurn)) {
-            int wc = whiteCount[player];
-            int bc = blackCount[player];
-            int min = Math.min(wc, bc);
-            int maxMoves = min*  2;
-            if(wc < bc && !b.tileToPos(b.playerTile(player)).isBlack()) {
-                maxMoves++;
-            } else if(bc < wc && b.tileToPos(b.playerTile(player)).isBlack()) {
-                maxMoves++;
+                    playerDistances[playerPos.player][t] = dist;
+                    minDistance[t] = dist;
+                    if (b.tileToPos(t).isBlack()) {
+                        blackCount[playerPos.player]++;
+                    } else {
+                        whiteCount[playerPos.player]++;
+                    }
+                    queue.add(new PlayerTilePair(playerPos.player, t));
+                });
             }
-            // Reused the whitecount array to save space.
-            whiteCount[player] = maxMoves;
+            for (int player : b.getAlivePlayers(playersTurn)) {
+                int wc = whiteCount[player];
+                int bc = blackCount[player];
+                int min = Math.min(wc, bc);
+                int maxMoves = min * 2;
+                if (wc < bc && !b.tileToPos(b.playerTile(player)).isBlack()) {
+                    maxMoves++;
+                } else if (bc < wc && b.tileToPos(b.playerTile(player)).isBlack()) {
+                    maxMoves++;
+                }
+                // Reused the whitecount array to save space.
+                whiteCount[player] = maxMoves;
+            }
+            playerTileCount = whiteCount;
         }
-        return whiteCount;
+
+        public int getPlayerTileCount(int player) {
+            return playerTileCount[player];
+        }
+
+        public boolean isInPlayerZone(int player, int tile) {
+            return playerDistances[player][tile] != 0;
+        }
     }
 
     public static class AvailableSpace {
         private Board board;
         private boolean[] visited;
         private boolean[] cutVertices;
-        private boolean[] battlefield;
         private Chamber rootChamber = Chamber.root(null);
         private int maxMoves;
+        private BoardUtil.BoardZones boardZones;
 
         private static class Chamber {
             private int id;
@@ -433,12 +450,12 @@ class BoardUtil {
 
         public AvailableSpace(Board board) {
             this.board = board;
+            boardZones = new BoardZones(board, board.US);
             visited = new boolean[board.getSize()];
             cutVertices = new boolean[board.getSize()];
             if(board.freeNeighbours(board.ourTile()).count() == 0) {
                 maxMoves = 0;
             } else {
-                battlefield = BoardUtil.battlefield(board);
                 CutVertices cv = new CutVertices(board);
                 cutVertices = cv.getCutVirtices();
                 dfsCount(board.ourTile());
@@ -522,7 +539,7 @@ class BoardUtil {
                 Chamber currentChamber = sc.getCurrentChamber();
                 visited[node] = true;
                 if (cutVertices[node]) {
-                    for (int child : board.freeNeighbours(node).filter(c -> !visited[c] && (battlefield== null || !battlefield[c])).boxed().collect(Collectors.toList())) {
+                    for (int child : board.freeNeighbours(node).filter(c -> !visited[c] && boardZones.isInPlayerZone(board.US, c)).boxed().collect(Collectors.toList())) {
                         // If a cut vertex has multiple children, and this loop runs twice, both must be chambers.
                         CheckerCount count = new CheckerCount(board);
                         currentChamber = new Chamber(count, currentChamber);
@@ -530,7 +547,7 @@ class BoardUtil {
                     }
 //                count.add(node);
                 } else {
-                    for (int child : board.freeNeighbours(node).filter(c -> !visited[c] && (battlefield == null || !battlefield[c])).boxed().collect(Collectors.toList())) {
+                    for (int child : board.freeNeighbours(node).filter(c -> !visited[c] && boardZones.isInPlayerZone(board.US, c)).boxed().collect(Collectors.toList())) {
                         // possibly only need first filtered child, as otherwise it would be a cutvertex.
                         stack.push(new StackScope(child, currentChamber));
                     }
