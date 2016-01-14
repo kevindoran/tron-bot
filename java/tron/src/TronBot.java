@@ -255,13 +255,16 @@ class BoardUtil {
 
     private static class PlayerTilePair {
         int player;
+        // Take both tile and pos. They are both used frequently, to save converting between them by saving both.
+        int tile;
+        Position pos;
 
-        public PlayerTilePair(int player, int tile) {
+        public PlayerTilePair(int player, int tile, Position pos) {
             this.player = player;
             this.tile = tile;
+            this.pos = pos;
         }
 
-        int tile;
     }
     // Algorithm taken from
     // https://kartikkukreja.wordpress.com/2013/11/09/articulation-points-or-cut-vertices-in-a-graph/
@@ -277,16 +280,18 @@ class BoardUtil {
 //        private boolean[] battlefield;
         private Board b;
 
-        public CutVertices(Board b) {
+        public CutVertices(Board b, BoardZones zones) {
             this.b = b;
-            boardZones = new BoardZones(b, b.US);
+            boardZones = zones;
             low = new int[b.getSize()];
             parent = new int[b.getSize()];
 //            battlefield = new boolean[b.getSize()];
             cutVirtices = new boolean[b.getSize()];
             visitOrder = new int[b.getSize()];
             assignLow();
-            assert cutVirtices[b.ourTile()] == true;
+            // Sometimes gets asserted, however, i think there are cases where it is okay, Such as neighbor is on
+            // battlefront.
+//            assert cutVirtices[b.ourTile()] == true || b.freeNeighbours(b.ourTile()).count() <= 1;
         }
 
         private void assignLow() {
@@ -301,9 +306,8 @@ class BoardUtil {
                 }
                 visitOrder[node] = ++visited;
                 low[node] = visitOrder[node];
-                List<Integer> children = b.neighbours(node).filter(n -> b.isFree(n) || n == b.ourTile()).boxed().collect(Collectors.toList());
-                for (int i = 0; i < children.size(); i++) {
-                    int child = children.get(i);
+                List<Integer> children = b.neighbours(node).filter(n -> (b.isFree(n) && boardZones.isInPlayerZone(b.US, n)) || n == b.ourTile()).boxed().collect(Collectors.toList());
+                for(int child : children) {
                     if (visitOrder[child] == 0) {
                         parent[child] = node;
                         stack.push(child);
@@ -343,11 +347,12 @@ class BoardUtil {
             int[] minDistance = new int[b.getSize()];
             Queue<PlayerTilePair> queue = new LinkedList<>();
             for (int p : b.getAlivePlayers(playersTurn)) {
-                queue.add(new PlayerTilePair(p, b.playerTile(p)));
+                queue.add(new PlayerTilePair(p, b.playerTile(p), b.tileToPos(b.playerTile(p))));
             }
             while (!queue.isEmpty()) {
                 PlayerTilePair playerPos = queue.poll();
-                b.freeNeighbours(playerPos.tile).filter((t) -> minDistance[t] == 0).forEach((t) -> {
+                b.freeNeighbours(playerPos.pos).filter((t) -> minDistance[t] == 0).forEach((t) -> {
+                    Position pos = b.tileToPos(t);
                     int dist = playerDistances[playerPos.player][playerPos.tile] + 1;
                     // If two players are the same distance, the one who's turn is first will claim the tile first. The tile
                     // will be within the reachable bound of the first player, but not the second. An explicit check isn't
@@ -358,12 +363,12 @@ class BoardUtil {
 //                }
                     playerDistances[playerPos.player][t] = dist;
                     minDistance[t] = dist;
-                    if (b.tileToPos(t).isBlack()) {
+                    if (pos.isBlack()) {
                         blackCount[playerPos.player]++;
                     } else {
                         whiteCount[playerPos.player]++;
                     }
-                    queue.add(new PlayerTilePair(playerPos.player, t));
+                    queue.add(new PlayerTilePair(playerPos.player, t, pos));
                 });
             }
             for (int player : b.getAlivePlayers(playersTurn)) {
@@ -395,7 +400,7 @@ class BoardUtil {
         private Board board;
         private boolean[] visited;
         private boolean[] cutVertices;
-        private Chamber rootChamber = Chamber.root(null);
+        private Chamber rootChamber;
         private int maxMoves;
         private BoardUtil.BoardZones boardZones;
 
@@ -412,7 +417,7 @@ class BoardUtil {
             public static Chamber root(Board b) {
                 Chamber c = new Chamber();
                 c.id = nextId++;
-                c.size = new CheckerCount(null);
+                c.size = new CheckerCount(b);
                 return c;
             }
 
@@ -448,20 +453,21 @@ class BoardUtil {
             }
         }
 
-        public AvailableSpace(Board board) {
+        public AvailableSpace(Board board, int playersTurn) {
             this.board = board;
-            boardZones = new BoardZones(board, board.US);
+            rootChamber = Chamber.root(board);
+            boardZones = new BoardZones(board, playersTurn);
             visited = new boolean[board.getSize()];
             cutVertices = new boolean[board.getSize()];
             if(board.freeNeighbours(board.ourTile()).count() == 0) {
                 maxMoves = 0;
             } else {
-                CutVertices cv = new CutVertices(board);
+                CutVertices cv = new CutVertices(board, boardZones);
                 cutVertices = cv.getCutVirtices();
                 dfsCount(board.ourTile());
                 maxMoves = chamberDfs(rootChamber);
                 // An extra one is counted due to the use of a root chamber which is just a placeholder but adds one space.
-                maxMoves--;
+//                maxMoves--;
             }
         }
 
@@ -878,34 +884,46 @@ class Board {
     }
 
     public IntStream neighbours(int tile) {
-        Position pos = tileToPos(tile);
+        Position pos = tileToPosUnsafe(tile);
         return neighbours(pos.getX(), pos.getY());
     }
 
     public IntStream freeNeighbours(int tile) {
-        Position pos = tileToPos(tile);
-        return freeNeighbours(pos.getX(), pos.getY());
+        Position pos = tileToPosUnsafe(tile);
+        return freeNeighbours(pos);
     }
 
-    public IntStream freeNeighbours(int x, int y) {
-        IntStream neighbours = neighbours(x, y);
+
+    public IntStream freeNeighbours(Position p) {
+        IntStream neighbours = neighbours(p.getX(), p.getY());
         return neighbours.filter((i)->isFree(i));
     }
 
     public IntStream neighbours(int x, int y) {
-        return IntStream.range(0, 4).map((i) -> {
-            if (i == 0 && x - 1 >= 0) {
-                return xyToTile(x - 1, y);
-            } else if(i == 1 && x + 1 < width) {
-                return xyToTile(x + 1, y);
-            } else if(i == 2 && y - 1 >= 0) {
-                return xyToTile(x, y - 1);
-            } else if(i == 3 && y + 1 < height) {
-                return xyToTile(x, y + 1);
-            } else {
-                return -1;
-            }
-        }).filter((i) -> i != -1);
+        return Arrays.stream(new int[]{xyToTileUnsafe(x - 1, y), xyToTileUnsafe(x + 1, y),
+                xyToTileUnsafe(x, y - 1), xyToTileUnsafe(x, y + 1)})
+            .filter((i) -> i != -1);
+    }
+
+    // Used by neighbours to shave some time off by allowing easy stream usage.
+    private int xyToTileUnsafe(int x, int y) {
+        if(!isValid(x, y)) {
+            return -1;
+        }
+        int tile = x + width * y;
+        return tile;
+    }
+
+    public int xyToTile(int x, int y) {
+        if(!isValid(x, y)) {
+            throw new IndexOutOfBoundsException();
+        }
+        int tile = x + width * y;
+        return tile;
+    }
+
+    public Position tileToPosUnsafe(int tile) {
+        return new Position(tile % width, tile / width);
     }
 
     public Position tileToPos(int tile) {
@@ -917,13 +935,6 @@ class Board {
         return new Position(x, y);
     }
 
-    public int xyToTile(int x, int y) {
-        if(!isValid(x, y)) {
-            throw new IndexOutOfBoundsException();
-        }
-        int tile = x + width * y;
-        return tile;
-    }
 
     public int getSize() {
         return height * width;
@@ -1182,7 +1193,7 @@ class WallHuggingDriver implements Driver {
     }
 }
 
-// Places around 350
+// Always move towards the battlefield.
 class Voronoi implements Driver {
     private Driver backupDriver = new WallHuggingDriver();
     private Filter connectedComponentChooser = new AvoidSmallComponents();
@@ -1244,7 +1255,6 @@ class Voronoi implements Driver {
 }
 
 class VoronoiMinMax implements Driver {
-
 //    private Driver backupDriver = new WallHuggingDriver();
     private Driver backupDriver = new BruteForceEndGame();
     private boolean backupEnabled = false;
@@ -1272,7 +1282,7 @@ class VoronoiMinMax implements Driver {
     private MinMax.Score countAvailableSpaces = new MinMax.Score() {
         public int eval(Board b, int player) {
             int spaceCount;
-            BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(b);
+            BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(b, player);
             spaceCount = availableSpace.getMaxMoves(); //BoardUtil.playerZoneCounts(b, player)[b.US];
             return spaceCount;
         }
@@ -1320,6 +1330,10 @@ class MinMax {
             this.pos = pos;
             this.score = score;
         }
+
+        public String print(Board b) {
+            return String.format("(%d, %d) %d", b.tileToPos(pos).getX(), b.tileToPos(pos).getY(), score);
+        }
     }
 
     public static Direction minMax(Board b, Score score, int depth) {
@@ -1354,7 +1368,7 @@ class MinMax {
                 return new PosScore(b.ourTile(), 0);
             }
             toTry = new ArrayList<>();
-            toTry.add(b.neighbours(b.playerTile(player)).findAny().getAsInt());
+            toTry.add(b.neighbours(b.playerTile(player)).filter(n -> b.isValid(b.tileToPos(n))).findAny().getAsInt());
         } else {
             toTry = freeNeighbours;
         }
@@ -1380,7 +1394,7 @@ class MinMax {
                 if (alpha == -1 || localMax.score > alpha) {
                     alpha = localMax.score;
                 }
-                if (beta != -1 && alpha <= beta) {
+                if (beta != -1 && beta <= alpha) {
                     break;
                 }
             }

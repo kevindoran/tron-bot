@@ -99,7 +99,8 @@ public class BoardUtilTest {
                 "c  1  x  1  1  c  0h\n" +
                 "x  1h x  x  1  x  0\n";
         Board b = Board.fromString(boardStr);
-        BoardUtil.CutVertices cv = new BoardUtil.CutVertices(b);
+        BoardUtil.BoardZones bz = new BoardUtil.BoardZones(b, b.US);
+        BoardUtil.CutVertices cv = new BoardUtil.CutVertices(b, bz);
         boolean[] cutVirtices = cv.getCutVirtices();
         Integer[] cutVerticesExpected = new Integer[] {15, 16, 17, 18, 19, 21, 28, 35, 40, 41};
         Set<Integer> expected  = new HashSet<Integer>(Arrays.asList(cutVerticesExpected));
@@ -107,6 +108,22 @@ public class BoardUtilTest {
             assertEquals("Failed on index " + i, expected.contains(i), cutVirtices[i]);
         }
     }
+
+
+//    @Test
+//    public void testSameComponentCount() {
+//        String boardStr =
+//                "0h 0  1  x  x\n" +
+//                "x  x  1  x  x\n" +
+//                "x  x  1  x  x\n" +
+//                "x  x  1h x  x\n" +
+//                "x  x  x  2  2h\n";
+//        Board b = Board.fromString(boardStr);
+//        BoardUtil.BoardZones bz = new BoardUtil.BoardZones(b, b.US);
+//        assertTrue(bz.isInSameComponent(0, 1));
+//        assertTrue(bz.isInSameComponent(1, 2));
+//        assertFalse(bz.isInSameComponent(0, 2));
+//    }
 
     @Test
     public void testSmartAvaiableSpace() {
@@ -118,7 +135,7 @@ public class BoardUtilTest {
                 "b  w  2  x  1h 0  x\n" +
                 "w  b  2  2  2h 0  x";
         Board b = Board.fromString(boardStr);
-        BoardUtil.AvailableSpace as = new BoardUtil.AvailableSpace(b);
+        BoardUtil.AvailableSpace as = new BoardUtil.AvailableSpace(b, b.US);
         assertEquals(11, as.getMaxMoves());
     }
 
