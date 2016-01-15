@@ -294,8 +294,9 @@ class BoardUtil {
         }
 
         private void assignLow() {
-            Stack<Integer> stack = new Stack<>();
-            Stack<Integer> dfsStack = new Stack<>();
+            // From the docs, Deque claims to be faster as a stack than java.util.Stack.
+            Deque<Integer> stack = new ArrayDeque<>(b.getSize());
+            Deque<Integer> dfsStack = new ArrayDeque<>(b.getSize());
             stack.push(b.ourTile());
             parent[b.ourTile()] = b.ourTile();
             while(!stack.isEmpty()) {
@@ -346,7 +347,8 @@ class BoardUtil {
             int[] whiteCount = new int[b.getPlayerCount()];
             int[] blackCount = new int[b.getPlayerCount()];
             int[] minDistance = new int[b.getSize()];
-            Queue<PlayerTilePair> queue = new LinkedList<>();
+            final int theoretical_max = b.getSize() * 3/4;
+            Queue<PlayerTilePair> queue = new ArrayDeque<>(theoretical_max);
             for (int p : b.getAlivePlayers(playersTurn)) {
                 queue.add(new PlayerTilePair(p, b.playerTile(p)));
             }
@@ -457,9 +459,13 @@ class BoardUtil {
         }
 
         public AvailableSpace(Board board, int playersTurn) {
+            this(board, new BoardZones(board, playersTurn));
+        }
+
+        public AvailableSpace(Board board, BoardZones boardZones) {
             this.board = board;
             rootChamber = Chamber.root(board);
-            boardZones = new BoardZones(board, playersTurn);
+            this.boardZones = boardZones;
             visited = new boolean[board.getSize()];
             cutVertices = new boolean[board.getSize()];
             if(board.freeNeighbours(board.ourTile()).size() == 0) {
@@ -537,7 +543,8 @@ class BoardUtil {
         }
 
         private void dfsCount(int node) {
-            Stack<StackScope> stack = new Stack<>();
+            // From the API docs, Deque claims to be faster as a stack than java.util.Stack.
+            Deque<StackScope> stack = new ArrayDeque<>();
             stack.push(new StackScope(node, rootChamber));
             while (!stack.isEmpty()) {
                 StackScope sc = stack.pop();
@@ -1310,7 +1317,7 @@ class VoronoiMinMax implements Driver {
 
     @Override
     public Direction move(Board board) {
-        int depth = 5;
+        int depth = 6;
         Direction bestMove;
         // If someone dies, the board can open up with new space.
         if(playerCount != board.getAliveCount()) {
@@ -1330,7 +1337,8 @@ class VoronoiMinMax implements Driver {
     private MinMax.Score countAvailableSpaces = new MinMax.Score() {
         public int eval(Board b, int player) {
             int spaceCount;
-            BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(b, player);
+            BoardUtil.BoardZones bz = new BoardUtil.BoardZones(b, player);
+            BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(b, bz);
             spaceCount = availableSpace.getMaxMoves(); //BoardUtil.playerZoneCounts(b, player)[b.US];
             return spaceCount;
         }
