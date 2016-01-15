@@ -258,12 +258,10 @@ class BoardUtil {
         int player;
         // Take both tile and pos. They are both used frequently, to save converting between them by saving both.
         int tile;
-        Position pos;
 
-        public PlayerTilePair(int player, int tile, Position pos) {
+        public PlayerTilePair(int player, int tile) {
             this.player = player;
             this.tile = tile;
-            this.pos = pos;
         }
 
     }
@@ -350,7 +348,7 @@ class BoardUtil {
             int[] minDistance = new int[b.getSize()];
             Queue<PlayerTilePair> queue = new LinkedList<>();
             for (int p : b.getAlivePlayers(playersTurn)) {
-                queue.add(new PlayerTilePair(p, b.playerTile(p), b.tileToPos(b.playerTile(p))));
+                queue.add(new PlayerTilePair(p, b.playerTile(p)));
             }
             while (!queue.isEmpty()) {
                 PlayerTilePair playerPos = queue.poll();
@@ -372,7 +370,7 @@ class BoardUtil {
                         } else {
                             whiteCount[playerPos.player]++;
                         }
-                        queue.add(new PlayerTilePair(playerPos.player, t, pos));
+                        queue.add(new PlayerTilePair(playerPos.player, t));
                     }
                 }
             }
@@ -1010,7 +1008,7 @@ class Position {
      * such things like finding out how many possible moves their are left in an area of the board.
      */
     public boolean isBlack() {
-        boolean isBlack = (x + y) % 2 == 0;
+        boolean isBlack = ((x^y)&1) == 0;
         return isBlack;
     }
     public int getX() {
