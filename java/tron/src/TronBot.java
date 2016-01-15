@@ -668,6 +668,7 @@ class Board {
     private final int playerCount;
     private int aliveCount;
     private Stack<Move> moveHistory = new Stack<>();
+    private Map<Integer, Position> tileToPosMap = new HashMap<>();
 
     private class Move {
         private int player;
@@ -722,6 +723,12 @@ class Board {
         playerTile = new int[playerCount];
         // Set all players off the board.
         Arrays.fill(playerTile, NOT_ON_BOARD);
+        // Avoid having to later convert from tile to position (with is expensive as it uses % and /.
+        for(int x = 0; x < width; x++) {
+            for(int y = 0; y < height; y++) {
+                tileToPosMap.put(xyToTile(x, y), new Position(x, y));
+            }
+        }
         US = us;
     }
 
@@ -732,6 +739,7 @@ class Board {
         this.playerTile = Arrays.copyOf(toCopy.playerTile, toCopy.playerTile.length);
         this.moveHistory = new Stack<>();
         this.moveHistory.addAll(toCopy.moveHistory);
+        this.tileToPosMap = toCopy.tileToPosMap;
     }
 
 
@@ -963,17 +971,11 @@ class Board {
         return tile;
     }
 
-    public Position tileToPosUnsafe(int tile) {
-        return new Position(tile % width, tile / width);
-    }
-
     public Position tileToPos(int tile) {
         if (tile > width * height - 1 || tile < 0) {
             throw new IndexOutOfBoundsException();
         }
-        int x = tile % width;
-        int y = tile / width;
-        return new Position(x, y);
+        return tileToPosMap.get(tile);
     }
 
 
