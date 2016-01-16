@@ -263,7 +263,10 @@ class BoardUtil {
             this.player = player;
             this.tile = tile;
         }
+    }
 
+    public static interface PositionFilter {
+        boolean isIncluded(int tile);
     }
     // Algorithm taken from
     // https://kartikkukreja.wordpress.com/2013/11/09/articulation-points-or-cut-vertices-in-a-graph/
@@ -275,13 +278,23 @@ class BoardUtil {
         private int[] visitOrder;
         private int visited = 0;
         private boolean[] cutVirtices;
-        private BoardZones boardZones;
+        private PositionFilter filter;
 //        private boolean[] battlefield;
         private Board b;
 
-        public CutVertices(Board b, BoardZones zones) {
+
+        public CutVertices(Board b) {
+            this(b, new PositionFilter() {
+                @Override
+                public boolean isIncluded(int tile) {
+                    return true;
+                }
+            });
+        }
+
+        public CutVertices(Board b, PositionFilter filter) {
             this.b = b;
-            boardZones = zones;
+            this.filter = filter;
             low = new int[b.getSize()];
             parent = new int[b.getSize()];
 //            battlefield = new boolean[b.getSize()];
@@ -297,10 +310,10 @@ class BoardUtil {
             // From the docs, Deque claims to be faster as a stack than java.util.Stack.
             Deque<Integer> stack = new ArrayDeque<>(b.getSize());
             Deque<Integer> dfsStack = new ArrayDeque<>(b.getSize());
-            stack.push(b.ourTile());
+            stack.addFirst(b.ourTile());
             parent[b.ourTile()] = b.ourTile();
             while(!stack.isEmpty()) {
-                int node = stack.pop();
+                int node = stack.removeFirst();
                 if(visitOrder[node] != 0) {
                     continue;
                 }
@@ -308,11 +321,11 @@ class BoardUtil {
                 low[node] = visitOrder[node];
                 List<Integer> children = b.neighbours(node);
                 for(int child : children) {
-                    if((b.isFree(child) && boardZones.isInPlayerZone(b.US, child)) || child == b.ourTile()) {
+                    if((b.isFree(child) && filter.isIncluded(child)) || child == b.ourTile()) {
                         if (visitOrder[child] == 0) {
                             parent[child] = node;
-                            stack.push(child);
-                            dfsStack.push(child);
+                            stack.addFirst(child);
+                            dfsStack.addFirst(child);
                         } else if (parent[node] != child) {
                             low[node] = Math.min(low[child], low[node]);
                         }
@@ -320,7 +333,7 @@ class BoardUtil {
                 }
             }
             while(!dfsStack.isEmpty()) {
-                Integer node = dfsStack.pop();
+                Integer node = dfsStack.removeFirst();
                 assert low[node] > 0;
                 low[parent[node]] = Math.min(low[parent[node]], low[node]);
                 if (low[node] >= visitOrder[parent[node]]) {
@@ -339,15 +352,16 @@ class BoardUtil {
      * as it calculates the battlefield implicitly while counting spaces.
      */
     public  static class BoardZones {
-        int[][] playerDistances;
+        int[] playerTerritory;
         int[] playerTileCount;
+        boolean[] isAlone;
 
         public BoardZones(Board b, int playersTurn) {
-            playerDistances = new int[b.getPlayerCount()][b.getSize()];
-            int[] whiteCount = new int[b.getPlayerCount()];
-            int[] blackCount = new int[b.getPlayerCount()];
-            int[] minDistance = new int[b.getSize()];
+            playerTerritory = new int[b.getSize()];
+            Arrays.fill(playerTerritory, Board.EMPTY);
             final int theoretical_max = b.getSize() * 3/4;
+            isAlone = new boolean[b.getPlayerCount()];
+            Arrays.fill(isAlone, true);
             Queue<PlayerTilePair> queue = new ArrayDeque<>(theoretical_max);
             for (int p : b.getAlivePlayers(playersTurn)) {
                 queue.add(new PlayerTilePair(p, b.playerTile(p)));
@@ -355,41 +369,18 @@ class BoardUtil {
             while (!queue.isEmpty()) {
                 PlayerTilePair playerPos = queue.poll();
                 for(int t : b.freeNeighbours(playerPos.tile)) {
-                    if (minDistance[t] == 0) {
-                        Position pos = b.tileToPos(t);
-                        int dist = playerDistances[playerPos.player][playerPos.tile] + 1;
-                        // If two players are the same distance, the one who's turn is first will claim the tile first. The tile
-                        // will be within the reachable bound of the first player, but not the second. An explicit check isn't
-                        // needed due to the order of the BFS. Assert here just to be sure.
-//                boolean beatenByTurnOrder = dist == minDistance[t] && firstReachingPlayer[t] < playerPos.player;
-//                if(beatenByTurnOrder) {
-//                    throw new RuntimeException();
-//                }
-                        playerDistances[playerPos.player][t] = dist;
-                        minDistance[t] = dist;
-                        if (pos.isBlack()) {
-                            blackCount[playerPos.player]++;
-                        } else {
-                            whiteCount[playerPos.player]++;
-                        }
+                    if (playerTerritory[t] == Board.EMPTY) {
+                        playerTerritory[t] = playerPos.player;
                         queue.add(new PlayerTilePair(playerPos.player, t));
+                    } else if(isAlone[playerPos.player] && playerTerritory[t] != playerPos.player) {
+                            isAlone[playerPos.player] = false;
                     }
                 }
             }
-            for (int player : b.getAlivePlayers(playersTurn)) {
-                int wc = whiteCount[player];
-                int bc = blackCount[player];
-                int min = Math.min(wc, bc);
-                int maxMoves = min * 2;
-                if (wc < bc && !b.tileToPos(b.playerTile(player)).isBlack()) {
-                    maxMoves++;
-                } else if (bc < wc && b.tileToPos(b.playerTile(player)).isBlack()) {
-                    maxMoves++;
-                }
-                // Reused the whitecount array to save space.
-                whiteCount[player] = maxMoves;
-            }
-            playerTileCount = whiteCount;
+        }
+
+        public boolean isAlone(int player) {
+            return isAlone[player];
         }
 
         public int getPlayerTileCount(int player) {
@@ -397,7 +388,7 @@ class BoardUtil {
         }
 
         public boolean isInPlayerZone(int player, int tile) {
-            return playerDistances[player][tile] != 0;
+            return playerTerritory[tile] == player;
         }
     }
 
@@ -471,7 +462,12 @@ class BoardUtil {
             if(board.freeNeighbours(board.ourTile()).size() == 0) {
                 maxMoves = 0;
             } else {
-                CutVertices cv = new CutVertices(board, boardZones);
+                CutVertices cv = new CutVertices(board, new PositionFilter() {
+                    @Override
+                    public boolean isIncluded(int tile) {
+                        return boardZones.isInPlayerZone(board.US, tile);
+                    }
+                });
                 cutVertices = cv.getCutVirtices();
                 dfsCount(board.ourTile());
                 maxMoves = chamberDfs(rootChamber);
@@ -544,7 +540,7 @@ class BoardUtil {
 
         private void dfsCount(int node) {
             // From the API docs, Deque claims to be faster as a stack than java.util.Stack.
-            Deque<StackScope> stack = new ArrayDeque<>();
+            Deque<StackScope> stack = new ArrayDeque<>(board.getSize());
             stack.push(new StackScope(node, rootChamber));
             while (!stack.isEmpty()) {
                 StackScope sc = stack.pop();
