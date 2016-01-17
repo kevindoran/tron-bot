@@ -117,7 +117,7 @@ public class BoardUtilTest {
                 "b  w  2  x  1h 0  x\n" +
                 "w  b  2  2  2h 0  x";
         Board b = Board.fromString(boardStr);
-        BoardUtil.AvailableSpace as = new BoardUtil.AvailableSpace(b, b.US);
+        BoardUtil.AvailableSpace as = new BoardUtil.AvailableSpace(b, b.US, b.US);
         assertEquals(11, as.getMaxMoves());
     }
 

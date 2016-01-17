@@ -1,5 +1,4 @@
 import java.util.*;
-import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -279,6 +278,7 @@ class BoardUtil {
         private int visited = 0;
         private boolean[] cutVirtices;
         private PositionFilter filter;
+        private int startingTile;
 //        private boolean[] battlefield;
         private Board b;
 
@@ -289,12 +289,13 @@ class BoardUtil {
                 public boolean isIncluded(int tile) {
                     return true;
                 }
-            });
+            }, b.ourTile());
         }
 
-        public CutVertices(Board b, PositionFilter filter) {
+        public CutVertices(Board b, PositionFilter filter, int startingTile) {
             this.b = b;
             this.filter = filter;
+            this.startingTile = startingTile;
             low = new int[b.getSize()];
             parent = new int[b.getSize()];
 //            battlefield = new boolean[b.getSize()];
@@ -310,8 +311,8 @@ class BoardUtil {
             // From the docs, Deque claims to be faster as a stack than java.util.Stack.
             Deque<Integer> stack = new ArrayDeque<>(b.getSize());
             Deque<Integer> dfsStack = new ArrayDeque<>(b.getSize());
-            stack.addFirst(b.ourTile());
-            parent[b.ourTile()] = b.ourTile();
+            stack.addFirst(startingTile);
+            parent[startingTile] = startingTile;
             while(!stack.isEmpty()) {
                 int node = stack.removeFirst();
                 if(visitOrder[node] != 0) {
@@ -321,7 +322,7 @@ class BoardUtil {
                 low[node] = visitOrder[node];
                 List<Integer> children = b.neighbours(node);
                 for(int child : children) {
-                    if((b.isFree(child) && filter.isIncluded(child)) || child == b.ourTile()) {
+                    if((b.isFree(child) && filter.isIncluded(child)) || child == startingTile) {
                         if (visitOrder[child] == 0) {
                             parent[child] = node;
                             stack.addFirst(child);
@@ -410,10 +411,10 @@ class BoardUtil {
 
             private Chamber() {}
 
-            public static Chamber root(Board b) {
+            public static Chamber root(Board b, int playerToCalculate) {
                 Chamber c = new Chamber();
                 c.id = nextId++;
-                c.size = new CheckerCount(b);
+                c.size = new CheckerCount(b, playerToCalculate);
                 return c;
             }
 
@@ -449,27 +450,27 @@ class BoardUtil {
             }
         }
 
-        public AvailableSpace(Board board, int playersTurn) {
-            this(board, new BoardZones(board, playersTurn));
+        public AvailableSpace(Board board, int playersTurn, int playerToCalculate) {
+            this(board, new BoardZones(board, playersTurn), playerToCalculate);
         }
 
-        public AvailableSpace(Board board, BoardZones boardZones) {
+        public AvailableSpace(Board board, BoardZones boardZones, int playerToCalculate) {
             this.board = board;
-            rootChamber = Chamber.root(board);
+            rootChamber = Chamber.root(board, playerToCalculate);
             this.boardZones = boardZones;
             visited = new boolean[board.getSize()];
             cutVertices = new boolean[board.getSize()];
-            if(board.freeNeighbours(board.ourTile()).size() == 0) {
+            if(board.freeNeighbours(board.playerTile(playerToCalculate)).size() == 0) {
                 maxMoves = 0;
             } else {
                 CutVertices cv = new CutVertices(board, new PositionFilter() {
                     @Override
                     public boolean isIncluded(int tile) {
-                        return boardZones.isInPlayerZone(board.US, tile);
+                        return boardZones.isInPlayerZone(playerToCalculate, tile);
                     }
-                });
+                }, board.playerTile(playerToCalculate));
                 cutVertices = cv.getCutVirtices();
-                dfsCount(board.ourTile());
+                dfsCount(playerToCalculate);
                 maxMoves = chamberDfs(rootChamber);
                 // An extra one is counted due to the use of a root chamber which is just a placeholder but adds one space.
 //                maxMoves--;
@@ -490,9 +491,11 @@ class BoardUtil {
             private int black;
             private int white;
             private Board board;
+            private int fromTile;
 
-            public CheckerCount(Board board) {
+            public CheckerCount(Board board, int playerToCalculate) {
                 this.board = board;
+                this.fromTile =board.playerTile(playerToCalculate);
             }
 
             public void add(CheckerCount c) {
@@ -511,9 +514,9 @@ class BoardUtil {
             public int getMaxMoves() {
                 int min = Math.min(white, black);
                 int maxMoves = min*  2;
-                if(white < black && !board.tileToPos(board.ourTile()).isBlack()) {
+                if(white < black && !board.tileToPos(fromTile).isBlack()) {
                     maxMoves++;
-                } else if(black < white && board.tileToPos(board.ourTile()).isBlack()) {
+                } else if(black < white && board.tileToPos(fromTile).isBlack()) {
                     maxMoves++;
                 }
                 return maxMoves;
@@ -538,8 +541,9 @@ class BoardUtil {
             }
         }
 
-        private void dfsCount(int node) {
+        private void dfsCount(int playerToCalculate) {
             // From the API docs, Deque claims to be faster as a stack than java.util.Stack.
+            int node = board.playerTile(playerToCalculate);
             Deque<StackScope> stack = new ArrayDeque<>(board.getSize());
             stack.push(new StackScope(node, rootChamber));
             while (!stack.isEmpty()) {
@@ -552,9 +556,9 @@ class BoardUtil {
                 visited[node] = true;
                 if (cutVertices[node]) {
                     for (int child : board.freeNeighbours(node)) {
-                        if(!visited[child] && boardZones.isInPlayerZone(board.US, child)) {
+                        if(!visited[child] && boardZones.isInPlayerZone(playerToCalculate, child)) {
                             // If a cut vertex has multiple children, and this loop runs twice, both must be chambers.
-                            CheckerCount count = new CheckerCount(board);
+                            CheckerCount count = new CheckerCount(board, playerToCalculate);
                             currentChamber = new Chamber(count, currentChamber);
                             stack.push(new StackScope(child, currentChamber));
                         }
@@ -562,7 +566,7 @@ class BoardUtil {
 //                count.add(node);
                 } else {
                     for (int child : board.freeNeighbours(node)) {
-                        if(!visited[child] && boardZones.isInPlayerZone(board.US, child)) {
+                        if(!visited[child] && boardZones.isInPlayerZone(playerToCalculate, child)) {
                             // possibly only need first filtered child, as otherwise it would be a cutvertex.
                             stack.push(new StackScope(child, currentChamber));
                         }
@@ -1334,47 +1338,110 @@ class VoronoiMinMax implements Driver {
         public int eval(Board b, int player) {
             int spaceCount;
             BoardUtil.BoardZones bz = new BoardUtil.BoardZones(b, player);
-            BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(b, bz);
+            BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(b, bz, b.US);
             spaceCount = availableSpace.getMaxMoves(); //BoardUtil.playerZoneCounts(b, player)[b.US];
             return spaceCount;
         }
-
-        public int eval2(Board b, int player) {
-            int[] playerSpaces = new int[b.getAliveCount()];
-            boolean inclusive = false;
-            boolean[] outOfBounds = BoardUtil.battlefield(b, inclusive);
-            for(int p : b.getAlivePlayers(player)) {
-                int spaceCount;
-                if(outOfBounds == null) {
-                    spaceCount = BoardUtil.availableSpaces(b, b.playerTile(p));
-                } else {
-                    spaceCount = BoardUtil.availableSpaces(b, b.playerTile(p), outOfBounds);
-                }
-            }
-            return comparativeSurplus(b, playerSpaces);
-        }
-
-        public int comparativeSurplus(Board b, int[] playerSpaces) {
-            int ourSpaces = playerSpaces[b.US];
-            int surplus = 0;
-            for(int p : playerSpaces) {
-                if(p == b.US) {
-                    continue;
-                }
-                surplus += ourSpaces - playerSpaces[p];
-            }
-            return surplus;
-        }
     };
+}
 
+
+class MaxNScore implements MaxN.Score {
+
+    private int[] playerScores;
+    private Board board;
+    private BoardUtil.BoardZones bz;
+    private static final int NOT_SET = -1;
+
+    public MaxNScore(Board b, int playersTurn) {
+        board = new Board(b);
+        bz = new BoardUtil.BoardZones(board, playersTurn);
+        playerScores = new int[b.getPlayerCount()];
+        Arrays.fill(playerScores, NOT_SET);
+    }
+
+    public static MaxNScore victory(Board b, int playersTurn) {
+        MaxNScore victoryScore = new MaxNScore(b, playersTurn);
+        victoryScore.playerScores[playersTurn] = b.getSize();
+        return victoryScore;
+    }
+
+    @Override
+    public int getScore(int player) {
+        if(playerScores[player] == NOT_SET) {
+            BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(board, bz, player);
+        }
+        return playerScores[player];
+    }
+}
+
+class MaxN {
+    public static class PosScore {
+        private int pos;
+        private Score score;
+
+        public int getPos() {
+            return pos;
+        }
+
+        public Score getScores() {
+            return score;
+        }
+
+        public PosScore(int pos, Score score) {
+            this.pos = pos;
+            this.score = score;
+        }
+    }
+
+    public interface Score {
+        int getScore(int player);
+    }
+
+    public static final int max_depth = 5;
+    public static Direction maxN(Board b, Score score, int depth) {
+        PosScore res = _maxN(b, score, depth, b.US, max_depth);
+        Direction d = b.tileToPos(b.ourTile()).directionTo(b.tileToPos(res.pos));
+        return d;
+    }
+
+    private static PosScore _maxN(Board b, Score score, int depth, int player, int currentStep) {
+        int attempts = 0;
+        while (!b.isAlive(player)) {
+            player = (player + 1) % b.getPlayerCount();
+            attempts++;
+            assert attempts < b.getPlayerCount();
+        }
+        if(b.getAliveCount() == 1) {
+            assert player == player;
+            return new PosScore(b.playerTile(player),  MaxNScore.victory(b, player));
+        }
+        if (currentStep == depth) {
+            return new PosScore(b.playerTile(player), new MaxNScore(b, player));
+        }
+        List<Integer> freeNeighbours = b.freeNeighbours(b.playerTile(player));
+        List<Integer> toTry;
+        if(freeNeighbours.isEmpty()) {
+            toTry = new ArrayList<>();
+            toTry.add(b.neighbours(b.playerTile(player)).get(0));
+        } else {
+            toTry = freeNeighbours;
+        }
+
+        PosScore max = null;
+        for(int n : toTry) {
+            PosScore posScore = _maxN(b, score, depth, (player + 1) % b.getPlayerCount(), ++currentStep);
+            if(max == null || posScore.score.getScore(player) > max.score.getScore(player)) {
+                max = posScore;
+            }
+        }
+        return max;
+    }
 }
 
 class MinMax {
-    public interface Score {
-        int eval(Board b, int player);
-    }
 
-    private static class PosScore {
+    static class PosScore {
         int pos;
         int score;
 
@@ -1388,6 +1455,10 @@ class MinMax {
         }
     }
 
+    interface Score {
+        int eval(Board b, int player);
+    }
+
     public static Direction minMax(Board b, Score score, int depth) {
         int currentStep = 0;
         int player = b.US;
@@ -1396,7 +1467,6 @@ class MinMax {
         return bestDirection;
     }
 
-
     private static PosScore _minMax(Board b, Score score, int depth, int player, int currentStep, int alpha, int beta) {
         int attempts = 0;
         while (!b.isAlive(player)) {
@@ -1404,12 +1474,13 @@ class MinMax {
             attempts++;
             assert attempts < b.getPlayerCount();
         }
+        // Need to do this test first, as otherwise we might kill ourselves attempting a move.
         if(b.getAliveCount() == 1) {
             assert player == b.US;
             return new PosScore(b.ourTile(), new Double(BoardUtil.availableSpaces(b, b.ourTile()) * 200).intValue());
         }
         if (currentStep == depth) {
-            return new PosScore(b.ourTile(), score.eval(b, player));
+            return new PosScore(b.playerTile(player), score.eval(b, player));
         }
         List<Integer> freeNeighbours = b.freeNeighbours(b.playerTile(player));
         List<Integer> toTry;
@@ -1441,7 +1512,7 @@ class MinMax {
 //                posScore.score++;
                 b.undoMove();
                 if (localMax == null || posScore.score > localMax.score) {
-                    localMax = new PosScore(n, posScore.score);
+                    localMax = new MinMax.PosScore(n, posScore.score);
                 }
                 if (alpha == -1 || localMax.score > alpha) {
                     alpha = localMax.score;
