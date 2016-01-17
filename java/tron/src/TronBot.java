@@ -1317,7 +1317,7 @@ class VoronoiMinMax implements Driver {
 
     @Override
     public Direction move(Board board) {
-        int depth = 6;
+        int depth = 4;
         Direction bestMove;
         // If someone dies, the board can open up with new space.
         if(playerCount != board.getAliveCount()) {
@@ -1329,7 +1329,8 @@ class VoronoiMinMax implements Driver {
             backupEnabled = true;
             bestMove = backupDriver.move(board);
         } else {
-            bestMove = MinMax.minMax(board, countAvailableSpaces, depth);
+//            bestMove = MinMax.minMax(board, countAvailableSpaces, depth);
+            bestMove = MaxN.maxN(board, new MaxNScore(), depth);
         }
         return bestMove;
     }
@@ -1345,62 +1346,90 @@ class VoronoiMinMax implements Driver {
     };
 }
 
-
 class MaxNScore implements MaxN.Score {
+
+    @Override
+    public MaxN.Result eval(Board b, int playersTurn) {
+        return new LazyResult(b, playersTurn);
+    }
+
+    @Override
+    public MaxN.Result victoryResult(Board b, int playersTurn) {
+        return LazyResult.victory(b, playersTurn);
+    }
+}
+
+class LazyResult implements MaxN.Result {
 
     private int[] playerScores;
     private Board board;
     private BoardUtil.BoardZones bz;
     private static final int NOT_SET = -1;
 
-    public MaxNScore(Board b, int playersTurn) {
+    public LazyResult(Board b, int playersTurn) {
         board = new Board(b);
         bz = new BoardUtil.BoardZones(board, playersTurn);
         playerScores = new int[b.getPlayerCount()];
         Arrays.fill(playerScores, NOT_SET);
     }
 
-    public static MaxNScore victory(Board b, int playersTurn) {
-        MaxNScore victoryScore = new MaxNScore(b, playersTurn);
+    public static LazyResult victory(Board b, int playersTurn) {
+        LazyResult victoryScore = new LazyResult(b, playersTurn);
         victoryScore.playerScores[playersTurn] = b.getSize();
         return victoryScore;
     }
 
     @Override
     public int getScore(int player) {
-        if(playerScores[player] == NOT_SET) {
-            BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(board, bz, player);
+        int total = 0;
+        for(int p = 0; p < board.getPlayerCount(); p++) {
+            if(playerScores[p] == NOT_SET) {
+                if(board.isAlive(p)) {
+                    BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(board, bz, p);
+                    playerScores[p] = availableSpace.getMaxMoves();
+                } else {
+                    playerScores[p] = 0;
+                }
+            }
+            total += playerScores[p];
         }
-        return playerScores[player];
+        return -total + 2 * playerScores[player];
     }
 }
 
 class MaxN {
     public static class PosScore {
         private int pos;
-        private Score score;
+        private Result result;
 
         public int getPos() {
             return pos;
         }
 
-        public Score getScores() {
-            return score;
+        public void setPos(int pos) {
+            this.pos = pos;
         }
 
-        public PosScore(int pos, Score score) {
+        public Result getScores() {
+            return result;
+        }
+
+        public PosScore(int pos, Result result) {
             this.pos = pos;
-            this.score = score;
+            this.result = result;
         }
     }
 
     public interface Score {
+        Result eval(Board b, int playersTurn);
+        Result victoryResult(Board b, int playersTurn);
+    }
+    public interface Result {
         int getScore(int player);
     }
 
-    public static final int max_depth = 5;
-    public static Direction maxN(Board b, Score score, int depth) {
-        PosScore res = _maxN(b, score, depth, b.US, max_depth);
+    public static Direction maxN(Board b, Score result, int depth) {
+        PosScore res = _maxN(b, result, depth, b.US, 0);
         Direction d = b.tileToPos(b.ourTile()).directionTo(b.tileToPos(res.pos));
         return d;
     }
@@ -1413,11 +1442,10 @@ class MaxN {
             assert attempts < b.getPlayerCount();
         }
         if(b.getAliveCount() == 1) {
-            assert player == player;
-            return new PosScore(b.playerTile(player),  MaxNScore.victory(b, player));
+            return new PosScore(b.playerTile(player),  score.victoryResult(b, player));
         }
         if (currentStep == depth) {
-            return new PosScore(b.playerTile(player), new MaxNScore(b, player));
+            return new PosScore(b.playerTile(player), score.eval(b, player));
         }
         List<Integer> freeNeighbours = b.freeNeighbours(b.playerTile(player));
         List<Integer> toTry;
@@ -1430,9 +1458,12 @@ class MaxN {
 
         PosScore max = null;
         for(int n : toTry) {
-            PosScore posScore = _maxN(b, score, depth, (player + 1) % b.getPlayerCount(), ++currentStep);
-            if(max == null || posScore.score.getScore(player) > max.score.getScore(player)) {
+            b.move(player, n);
+            PosScore posScore = _maxN(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1);
+            b.undoMove();
+            if(max == null || posScore.result.getScore(player) > max.result.getScore(player)) {
                 max = posScore;
+                max.pos = n;
             }
         }
         return max;
@@ -1499,17 +1530,17 @@ class MinMax {
         if (maximize) {
             PosScore localMax = null;
             assert !freeNeighbours.isEmpty();
-            freeNeighbours.sort(new Comparator<Integer>() {
+            toTry.sort(new Comparator<Integer>() {
                 @Override
                 public int compare(Integer o1, Integer o2) {
                     return new Long(b.freeNeighbours(o2).size()).compareTo(new Long(b.freeNeighbours(o1).size()));
                 }
             });
-            for (int n : freeNeighbours) {
+            for (int n : toTry) {
                 b.move(player, n);
                 PosScore posScore = _minMax(b, score, depth, (player + 1) % b.getPlayerCount(), currentStep + 1, alpha, beta);
                 // Adding one favours living longer in case all options end in death.
-//                posScore.score++;
+//                posScore.result++;
                 b.undoMove();
                 if (localMax == null || posScore.score > localMax.score) {
                     localMax = new MinMax.PosScore(n, posScore.score);
