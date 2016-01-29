@@ -72,23 +72,6 @@ public class BoardUtilTest {
     }
 
     @Test
-    public void testPlayerZoneCounts() {
-        // a, b & c are the tiles closet to 0, 1 & 2 respectively.
-        String boardStr =
-                "1  b  c  c  2\n"  +
-                "1  b  c  c  2h\n" +
-                "1h b  b  x  c\n"  +
-                "b  b  a  a  x\n"  +
-                "b  a  a  0h 0\n";
-        Board b = Board.fromString(boardStr);
-        BoardUtil.BoardZones zones = new BoardUtil.BoardZones(b, b.US);
-        assertEquals(4, zones.getPlayerTileCount(0));
-        assertEquals(6, zones.getPlayerTileCount(1));
-        // This is actually better to be 4. Room for improvement.
-        assertEquals(5, zones.getPlayerTileCount(2));
-    }
-
-    @Test
     public void testCutVirtices() {
         String boardStr =
                 "2  x  x  x  2  2  2\n" +
@@ -99,8 +82,7 @@ public class BoardUtilTest {
                 "c  1  x  1  1  c  0h\n" +
                 "x  1h x  x  1  x  0\n";
         Board b = Board.fromString(boardStr);
-        BoardUtil.BoardZones bz = new BoardUtil.BoardZones(b, b.US);
-        BoardUtil.CutVertices cv = new BoardUtil.CutVertices(b, bz);
+        BoardUtil.CutVertices cv = new BoardUtil.CutVertices(b);
         boolean[] cutVirtices = cv.getCutVirtices();
         Integer[] cutVerticesExpected = new Integer[] {15, 16, 17, 18, 19, 21, 28, 35, 40, 41};
         Set<Integer> expected  = new HashSet<Integer>(Arrays.asList(cutVerticesExpected));
