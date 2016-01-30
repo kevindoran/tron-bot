@@ -91,6 +91,42 @@ public class BoardUtilTest {
         }
     }
 
+    @Test
+    public void testBorderingPlayerCount() {
+        String boardStr =
+                "2  x  x  x  2  2  2\n" +
+                "2  2  2  2  2  x  2h\n" +
+                "x  c  c  c  c  c  x\n" +
+                "c  x  1  1  x  x  x\n" +
+                "c  1  1  1  x  x  x\n" +
+                "c  1  x  1  1  c  0h\n" +
+                "x  1h x  x  1  x  0\n";
+        Board b = Board.fromString(boardStr);
+        BoardUtil.BoardZones bz = new BoardUtil.BoardZones(b, b.US);
+        assertEquals(1, bz.borderingPlayerCount(0));
+        assertEquals(1, bz.borderingPlayerCount(1));
+        assertEquals(2, bz.borderingPlayerCount(2));
+    }
+
+
+    @Test
+    public void testPlayerEdgeCount() {
+        String boardStr =
+                "2  x  x  x  2  2  2\n" +
+                "2  2  2  2  2  c  2h\n" +
+                "b  b  c  c  c  c  c\n" +
+                "b  b  1  1  a  a  a\n" +
+                "b  1  1  1  a  a  a\n" +
+                "b  1  b  1  1  a  0h\n" +
+                "b  1h b  b  1  a  0\n";
+        Board b = Board.fromString(boardStr);
+        BoardUtil.BoardZones bz = new BoardUtil.BoardZones(b, b.US);
+        // Currently, it is half counting the actual battlefield. Not sure yet if this is + / -.
+        assertEquals(24, bz.getEdgeCount(0));
+        assertEquals(17, bz.getEdgeCount(2));
+        // Not quite sure why this is one off yet.
+        assertEquals(21, bz.getEdgeCount(1));
+    }
 
 //    @Test
 //    public void testSameComponentCount() {
