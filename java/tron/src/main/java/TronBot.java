@@ -349,6 +349,35 @@ class BoardUtil {
         }
     }
 
+
+    public static int score(Board b, BoardZones bz, int forPlayer) {
+        int playerSpaceC = 887;
+        int playerEdgesC = 681;
+        int noOfBorderingPlayersC = 43731;
+        // In reverse strength.
+        int[] enemySpaceC = new int[] {2773, 8567, 7006};
+
+        int total = bz.getTotalAvailableSpace();
+        if(total == 0) {
+            // No space for anyone.
+            return 0;
+        }
+        int score = 0;
+        score += playerEdgesC * bz.getEdgeCount(forPlayer);
+        score += noOfBorderingPlayersC * bz.borderingPlayerCount(forPlayer);
+        int[] space = Arrays.copyOf(bz.playerTileCount, b.getPlayerCount());
+        Arrays.sort(space);
+        int e = 0;
+        for(int p = 0; p < b.getPlayerCount(); p++) {
+            if(p == forPlayer) {
+                score += space[p] * playerSpaceC;
+            } else {
+                score += enemySpaceC[e++] * space[p] / total;
+            }
+        }
+        return score;
+    }
+
     /**
      * Calculates the space reachable by each player without crossing the battlefield. Faster than previous method
      * as it calculates the battlefield implicitly while counting spaces.
@@ -358,8 +387,10 @@ class BoardUtil {
         private int[] playerTileCount;
         private int[] playerEdgeCount;
         private Set<Integer>[] borderingPlayers;
+        private int playerCount;
 
         public BoardZones(Board b, int playersTurn) {
+            playerCount = b.getPlayerCount();
             playerTileCount = new int[b.getPlayerCount()];
             playerEdgeCount = new int[b.getPlayerCount()];
             playerTerritory = new int[b.getSize()];
@@ -391,6 +422,14 @@ class BoardUtil {
                     }
                 }
             }
+        }
+
+        public int getTotalAvailableSpace() {
+            int total = 0;
+            for(int p = 0; p < playerCount; p++) {
+                total += getPlayerTileCount(p);
+            }
+            return total;
         }
 
         public boolean isAlone(int player) {
@@ -1351,7 +1390,7 @@ class VoronoiMinMax implements Driver {
 
     @Override
     public Direction move(Board board) {
-        int depth = 4;
+        int depth = 7;
         Direction bestMove;
         // If someone dies, the board can open up with new space.
         if(playerCount != board.getAliveCount()) {
@@ -1384,21 +1423,42 @@ class MaxNScore implements MaxN.Score {
 
     @Override
     public MaxN.Result eval(Board b, int playersTurn) {
-        return new LazyResult(b, playersTurn);
+        return new RegressionResult(b, playersTurn);
     }
 
     @Override
     public MaxN.Result victoryResult(Board b, int playersTurn) {
-        return LazyResult.victory(b, playersTurn);
+        return new RegressionResult().victory(b, playersTurn);
+    }
+}
+
+class RegressionResult extends LazyResult {
+
+    private static final int MAX_FACTOR = 1000000;
+
+    public RegressionResult(Board b, int playersTurn) {
+        super(b, playersTurn);
+    }
+
+    public RegressionResult() {}
+
+    @Override
+    protected int calculateScore(int player) {
+        return BoardUtil.score(board, bz, player);
+    }
+
+    @Override
+    protected int maxScore(Board b) {
+        return MAX_FACTOR * b.width * b.height;
     }
 }
 
 class LazyResult implements MaxN.Result {
 
-    private int[] playerScores;
-    private Board board;
-    private BoardUtil.BoardZones bz;
-    private static final int NOT_SET = -1;
+    protected int[] playerScores;
+    protected Board board;
+    protected BoardUtil.BoardZones bz;
+    protected static final int NOT_SET = -1;
 
     public LazyResult(Board b, int playersTurn) {
         board = new Board(b);
@@ -1407,9 +1467,12 @@ class LazyResult implements MaxN.Result {
         Arrays.fill(playerScores, NOT_SET);
     }
 
-    public static LazyResult victory(Board b, int playersTurn) {
+    // Kind of hacky. Just used so that we can call victory with overloaded max-score.
+    public LazyResult() {}
+
+    public LazyResult victory(Board b, int playersTurn) {
         LazyResult victoryScore = new LazyResult(b, playersTurn);
-        victoryScore.playerScores[playersTurn] = b.getSize();
+        victoryScore.playerScores[playersTurn] = maxScore(b);
         return victoryScore;
     }
 
@@ -1419,14 +1482,22 @@ class LazyResult implements MaxN.Result {
             if(!board.isAlive(player)) {
                 playerScores[player] = 0;
             } else { // if(player == board.US || board.getAliveCount() <= 2) {
-                BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(board, bz, player);
-                playerScores[player] = availableSpace.getMaxMoves();
+                playerScores[player] = calculateScore(player);
 //            } else {
                 // Much faster test for enemies.
 //                playerScores[player] = bz.getPlayerTileCount(player);
             }
         }
         return playerScores[player];
+    }
+
+    protected int maxScore(Board b) {
+        return b.getSize();
+    }
+
+    protected int calculateScore(int player) {
+        BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(board, bz, player);
+        return  availableSpace.getMaxMoves();
     }
 }
 
