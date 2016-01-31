@@ -20,7 +20,7 @@ public class Replay {
     public static final String USERNAME = "CloudLeaper";
     public static class MoveStat {
         List<Integer> counts = new ArrayList<>();
-        int ourCount;
+        int ourCount = 0;
         int ourEdges;
         int borderingPlayerCount;
         int turnsRemaining;
@@ -34,13 +34,17 @@ public class Replay {
                 if(p == b.US) {
                     ourCount = bz.getPlayerTileCount(p);
                 } else {
+                    bz.getPlayerTileCount(p);
                     counts.add(bz.getPlayerTileCount(p));
                 }
+            }
+            while(counts.size() < 3) {
+                counts.add(0);
             }
         }
 
         public static String[]  csvHeader() {
-            return new String[] {"Turns Remaining", "ourSpace", "ourOpenEdges", "noOfBorderingPlayers", "enemy1Space", "enemy2Space", "enemy2Space"};
+            return new String[] {"turns", "space", "edges", "bordering", "enemy1", "enemy2", "enemy3"};
         }
 
         public String[] toArray() {
@@ -142,8 +146,11 @@ public class Replay {
         CSVWriter wr = new CSVWriter(new OutputStreamWriter(out));
         wr.writeNext(MoveStat.csvHeader());
         for(MoveStat ms : moveStats) {
-            wr.writeNext(ms.toArray());
+            if(ms.borderingPlayerCount > 0) {
+                wr.writeNext(ms.toArray());
+            }
         }
+        wr.close();
     }
 
     public static void main(String[] args) throws IOException {
