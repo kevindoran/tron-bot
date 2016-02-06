@@ -351,11 +351,14 @@ class BoardUtil {
 
 
     public static int score(Board b, BoardZones bz, int forPlayer) {
-        int playerSpaceC = 887;
-        int playerEdgesC = 681;
-        int noOfBorderingPlayersC = 43731;
+        int playerSpaceC = 1;
+        int playerEdgesC = 0;
+        int playerWideC = 0;
+        int noOfBorderingPlayersC = 0;
+        int noOfBackstabbing = -10;
+        int noOfPlayersC = 0;
         // In reverse strength.
-        int[] enemySpaceC = new int[] {2773, 8567, 7006};
+        int enemySpaceC = 0;
 
         int total = bz.getTotalAvailableSpace();
         if(total == 0) {
@@ -363,18 +366,33 @@ class BoardUtil {
             return 0;
         }
         int score = 0;
+        if(!b.isAlive(forPlayer)) {
+            score -= 100000000;
+        }
+//         AvailableSpace as = new AvailableSpace(b, bz, forPlayer);
+//         score += playerSpaceC * as.getMaxMoves();
+        int enemyCount = b.getAliveCount();
+        if(b.isAlive(forPlayer)) {
+            enemyCount--;
+        }
+        score += noOfPlayersC * enemyCount;
+//        score += playerSpaceC * bz.getPlayerTileCount(forPlayer);
         score += playerEdgesC * bz.getEdgeCount(forPlayer);
-        score += noOfBorderingPlayersC * bz.borderingPlayerCount(forPlayer);
+        score += playerWideC * bz.getSpaceIncNeighbourSpace(forPlayer);
+//        score += noOfBorderingPlayersC * bz.borderingPlayerCount(forPlayer);
+        score += noOfBackstabbing * bz.backstabbingPlayerCount(forPlayer);
         int[] space = Arrays.copyOf(bz.playerTileCount, b.getPlayerCount());
-        Arrays.sort(space);
-        int e = 0;
+        int bss = 0;
         for(int p = 0; p < b.getPlayerCount(); p++) {
             if(p == forPlayer) {
-                score += space[p] * playerSpaceC;
+                //
             } else {
-                score += enemySpaceC[e++] * space[p] / total;
+                if(bz.backstabbingPlayers[forPlayer].contains(p)) {
+                    bss+= bz.getPlayerTileCount(p);
+                }
             }
         }
+        score += (space[forPlayer] + bss) * playerSpaceC;
         return score;
     }
 
@@ -388,6 +406,7 @@ class BoardUtil {
         private int[] playerEdgeCount;
         private Set<Integer>[] borderingPlayers;
         private int playerCount;
+        private Set<Integer>[] backstabbingPlayers;
 
         public BoardZones(Board b, int playersTurn) {
             playerCount = b.getPlayerCount();
@@ -395,8 +414,10 @@ class BoardUtil {
             playerEdgeCount = new int[b.getPlayerCount()];
             playerTerritory = new int[b.getSize()];
             borderingPlayers = new Set[b.getPlayerCount()];
+            backstabbingPlayers = new Set[b.getPlayerCount()];
             for(int p = 0; p < b.getPlayerCount(); p++) {
                 borderingPlayers[p] = new HashSet<>();
+                backstabbingPlayers[p] = new HashSet<>();
             }
             Arrays.fill(playerTerritory, Board.EMPTY);
             final int theoretical_max = b.getSize() * 3/4;
@@ -407,7 +428,14 @@ class BoardUtil {
             }
             while (!queue.isEmpty()) {
                 PlayerTilePair playerPos = queue.poll();
-                for(int t : b.freeNeighbours(playerPos.tile)) {
+                for(int t : b.neighbours(playerPos.tile)) {
+                    if(!b.isFree(t)) {
+//                        if(b.getTileValue(t) != playerPos.player) {
+                        if(b.getTileValue(t) != playerPos.player && b.playerTile(b.getTileValue(t)) != t) {
+                            backstabbingPlayers[playerPos.player].add(b.getTileValue(t));
+                        }
+                        continue;
+                    } 
                     playerEdgeCount[playerPos.player]++;
                     if (playerTerritory[t] == Board.EMPTY) {
                         playerTerritory[t] = playerPos.player;
@@ -422,6 +450,24 @@ class BoardUtil {
                     }
                 }
             }
+            for(int p : b.getAlivePlayers()) {
+                Iterator<Integer> itr = backstabbingPlayers[p].iterator();
+                while(itr.hasNext()) {
+                    int e = itr.next();
+                    if(getPlayerTileCount(e)*2 >= getPlayerTileCount(p)) {
+                        itr.remove();
+                    }
+                }
+            }
+        }
+
+        public int getSpaceIncNeighbourSpace(int player) {
+            int total = 0;
+            total += getPlayerTileCount(player);
+            for(int p : borderingPlayers[player]) {
+                total += getPlayerTileCount(player);
+            }
+            return total;
         }
 
         public int getTotalAvailableSpace() {
@@ -442,6 +488,10 @@ class BoardUtil {
 
         public int borderingPlayerCount(int player) {
             return borderingPlayers[player].size();
+        }
+        
+        public int backstabbingPlayerCount(int player) {
+            return backstabbingPlayers[player].size();
         }
 
         public int getPlayerTileCount(int player) {
@@ -1390,7 +1440,10 @@ class VoronoiMinMax implements Driver {
 
     @Override
     public Direction move(Board board) {
-        int depth = 7;
+        int depth = 5;
+        if(board.getAliveCount() == 2) {
+            depth = 7;
+        }
         Direction bestMove;
         // If someone dies, the board can open up with new space.
         if(playerCount != board.getAliveCount()) {
@@ -1402,8 +1455,11 @@ class VoronoiMinMax implements Driver {
             backupEnabled = true;
             bestMove = backupDriver.move(board);
         } else {
-//            bestMove = MinMax.minMax(board, countAvailableSpaces, depth);
-            bestMove = MaxN.maxN(board, new MaxNScore(), depth);
+            if(board.getAliveCount() == 2) {
+                bestMove = MinMax.minMax(board, countAvailableSpaces, depth);
+            } else {
+                bestMove = MaxN.maxN(board, new MaxNScore(), depth);
+            }
         }
         return bestMove;
     }
@@ -1412,8 +1468,10 @@ class VoronoiMinMax implements Driver {
         public int eval(Board b, int player) {
             int spaceCount;
             BoardUtil.BoardZones bz = new BoardUtil.BoardZones(b, player);
-            BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(b, bz, b.US);
-            spaceCount = availableSpace.getMaxMoves(); //BoardUtil.playerZoneCounts(b, player)[b.US];
+            spaceCount = BoardUtil.score(b, bz, b.US);
+//            BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(b, bz, b.US);
+//            spaceCount = availableSpace.getMaxMoves(); //BoardUtil.playerZoneCounts(b, player)[b.US];
+//            spaceCount = bz.getPlayerTileCount(b.US);
             return spaceCount;
         }
     };
@@ -1434,7 +1492,7 @@ class MaxNScore implements MaxN.Score {
 
 class RegressionResult extends LazyResult {
 
-    private static final int MAX_FACTOR = 1000000;
+    private static final int MAX_FACTOR = 1000000000;
 
     public RegressionResult(Board b, int playersTurn) {
         super(b, playersTurn);
@@ -1496,8 +1554,8 @@ class LazyResult implements MaxN.Result {
     }
 
     protected int calculateScore(int player) {
-        BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(board, bz, player);
-        return  availableSpace.getMaxMoves();
+        int score = BoardUtil.score(board, bz, player);
+        return  score;
     }
 }
 
