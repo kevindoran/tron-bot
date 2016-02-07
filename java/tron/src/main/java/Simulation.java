@@ -1,34 +1,28 @@
+import com.opencsv.CSVWriter;
+
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Random;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 /**
  * Created by Kevin on 2015/12/17.
  */
 public class Simulation {
-    private SimPlayer[] players;
     private Board board;
-    Position[] initialPositions;
+    private Position[] initialPositions;
+    private ExecutorService executor = Executors.newSingleThreadExecutor();
+    private List<SimPlayer> players;
+    private GameResult result;
 
-    public static void main(String[] args) {
-        Simulation sim = new Simulation();
-        sim.simulation();
-    }
-
-    public void simulation() {
-        int width = 30;
-        int height = 20;
-        int playerCount = 4;
-        players = new SimPlayer[playerCount];
-        int us = 0;
+    public Simulation(int width, int height, List<SimPlayer> players) {
+        this.players = players;
+        int playerCount = players.size();
+        this.result = new GameResult(playerCount);
         Random rn = new Random();
-        board = new Board(30, 20, 4, 0);
-        // P0 is the test sim.
-        players[0] = new SimPlayer(new VoronoiMinMax());
-//        players[2] = new SimPlayer(new StaySafeDriver());
-        players[2] = new SimPlayer(new StaySafeDriver());
-        players[1] = new SimPlayer(new WallHuggingDriver());
-        players[3] = new SimPlayer(new StaySafeDriver());
+        int us = 0;
+        board = new Board(width, height, playerCount, us);
         initialPositions = new Position[playerCount];
         for(int p = 0; p < playerCount; p++) {
             int x;
@@ -47,65 +41,50 @@ public class Simulation {
             board.move(p, initialPositions[p]);
         }
         for(int p = 0; p < playerCount; p++) {
-            players[p].init(width, height, boardToText(board, initialPositions, p));
+            players.get(p).init(width, height, boardToText(board, initialPositions, p));
         }
-        runSim();
     }
 
-    private void runSim() {
+    public GameResult run() {
         while(board.getAliveCount() > 1) {
-            for(int p = 0; p < players.length; p++) {
+            for(int p = 0; p < players.size(); p++) {
                 if (board.playerTile(p) == Board.DEAD) {
                     continue;
                 }
                 String message = boardToText(board, initialPositions, p);
                 Position position;
                 try {
-                    Direction d = players[p].next(message);
+                    Direction d;
+                    try {
+                        final int pTemp = p;
+                        Future<Direction> future = executor.submit(() -> players.get(pTemp).next(message));
+                        d = future.get(100, TimeUnit.MILLISECONDS);
+                    } catch(TimeoutException e) {
+                        System.out.println(String.format("Player %d timed-out.", p));
+                        markDead(p);
+                        continue;
+                    }
                     int tile = board.tileFrom(board.playerTile(p), d);
                     position = board.tileToPos(tile);
                     if(!board.isValid(position) || !board.isFree(tile)) {
                         System.out.println(String.format("Player %d moved to invalid position.", p));
-                        board.clear(p);
+                        markDead(p);
                         continue;
                     }
                     board.move(p, position);
                 } catch(Exception e) {
                     System.out.println(String.format("Exception from player %d: " + e.toString(), p));
-//                    throw e;
-                    board.clear(p);
+                    markDead(p);
                     continue;
                 }
             }
         }
+        return result;
     }
 
-    private class SimPlayer {
-        private Driver d;
-        private boolean isAlive;
-        private Board board;
-        private InputParser parser = new InputParser();
-
-        public SimPlayer(Driver driver) {
-            this.d = driver;
-        }
-
-        public void init(int width, int height, String message) {
-            System.out.println(message);
-            System.setIn(new ByteArrayInputStream(message.getBytes(StandardCharsets.UTF_8)));
-            board = parser.init(width, height);
-        }
-
-        public Direction next(String input) {
-            System.setIn(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)));
-            parser.update(board);
-            Direction nextMove = d.move(board);
-            int tile = board.tileFrom(board.ourTile(), nextMove);
-            if(!board.isFree(tile)) {
-                throw new RuntimeException("Shouldn't be moving to invalid tile.");
-            }
-            return nextMove;
-        }
+    private void markDead(int player) {
+        board.clear(player);
+        result.addNextDead(players.get(player));
     }
 
     private String boardToText(Board b, Position[] initialPositions, int player) {

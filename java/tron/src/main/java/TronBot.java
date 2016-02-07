@@ -1,9 +1,8 @@
-import java.lang.reflect.Array;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-// Everything must be in the same file for- submission.
+// Everything must be in the same file for submission.
 class Player {
 
     public static void main(String[] args) {
@@ -1432,50 +1431,58 @@ class Voronoi implements Driver {
     }
 }
 
-class VoronoiMinMax implements Driver {
-//    private Driver backupDriver = new WallHuggingDriver();
-    private Driver backupDriver = new BruteForceEndGame();
+
+abstract class TwoStageDriver implements Driver {
     private boolean backupEnabled = false;
     private int playerCount = 0;
 
-    @Override
+   @Override
     public Direction move(Board board) {
-        int depth = 5;
-        if(board.getAliveCount() == 2) {
-            depth = 7;
-        }
-        Direction bestMove;
-        // If someone dies, the board can open up with new space.
-        if(playerCount != board.getAliveCount()) {
-            backupEnabled = false;
-            playerCount = board.getAliveCount();
-        }
-        if(backupEnabled || BoardUtil.isAloneInComponent(board)) {
-            System.err.println("Backup enabled");
-            backupEnabled = true;
-            bestMove = backupDriver.move(board);
-        } else {
-            if(board.getAliveCount() == 2) {
-                bestMove = MinMax.minMax(board, countAvailableSpaces, depth);
-            } else {
-                bestMove = MaxN.maxN(board, new MaxNScore(), depth);
-            }
-        }
-        return bestMove;
+       Direction bestMove;
+       if(playerCount != board.getAliveCount()) {
+           backupEnabled = false;
+           playerCount = board.getAliveCount();
+       }
+       if(backupEnabled || isBackupEnabled(board)) {
+           System.err.println("Backup enabled");
+           backupEnabled = true;
+           bestMove = backupMove(board);
+       } else {
+           bestMove = mainMove(board);
+       }
+       return bestMove;
+   }
+
+    protected boolean isBackupEnabled(Board b) {
+        return BoardUtil.isAloneInComponent(b);
     }
 
+    protected Direction backupMove(Board b) {
+        BruteForceEndGame bf = new BruteForceEndGame();
+        return bf.move(b);
+    }
+
+    protected abstract Direction mainMove(Board b);
+}
+
+// Reference Driver.
+class VoronoiMinMax extends TwoStageDriver {
+    private final int DEPTH = 7;
     private MinMax.Score countAvailableSpaces = new MinMax.Score() {
         public int eval(Board b, int player) {
             int spaceCount;
             BoardUtil.BoardZones bz = new BoardUtil.BoardZones(b, player);
-            spaceCount = BoardUtil.score(b, bz, b.US);
-//            BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(b, bz, b.US);
-//            spaceCount = availableSpace.getMaxMoves(); //BoardUtil.playerZoneCounts(b, player)[b.US];
-//            spaceCount = bz.getPlayerTileCount(b.US);
+            BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(b, bz, b.US);
+            spaceCount = availableSpace.getMaxMoves();
             return spaceCount;
         }
     };
+
+    protected Direction mainMove(Board board) {
+        return MinMax.minMax(board, countAvailableSpaces, DEPTH);
+    }
 }
+
 
 class MaxNScore implements MaxN.Score {
 
