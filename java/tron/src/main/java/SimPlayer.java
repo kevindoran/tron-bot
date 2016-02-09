@@ -1,5 +1,7 @@
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Scanner;
 
 class SimPlayer {
     private Driver d;
@@ -17,14 +19,23 @@ class SimPlayer {
     }
 
     public void init(int width, int height, String message) {
-        System.out.println(message);
-        System.setIn(new ByteArrayInputStream(message.getBytes(StandardCharsets.UTF_8)));
-        board = parser.init(width, height);
+        ByteArrayInputStream stream = new ByteArrayInputStream(message.getBytes(StandardCharsets.UTF_8));
+        board = parser.init(width, height, stream);
+        try {
+            stream.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public Direction next(String input) {
-        System.setIn(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)));
-        parser.update(board);
+        ByteArrayInputStream stream = new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8));
+        parser.update(board, stream);
+        try {
+            stream.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         Direction nextMove = d.move(board);
         int tile = board.tileFrom(board.ourTile(), nextMove);
         if(!board.isFree(tile)) {

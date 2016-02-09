@@ -1,3 +1,5 @@
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -13,13 +15,13 @@ class Player {
 //        Driver driver  = new WallHuggingDriver();
         Driver driver = new VoronoiMinMax();
         InputParser p = new InputParser();
-        Board board = p.init(width, height);
+        Board board = p.init(width, height, System.in);
         while (true) {
             Direction nextMove = driver.move(board);
             int tile = board.tileFrom(board.ourTile(), nextMove);
             assert board.isFree(tile);
             System.out.println(nextMove.toString());
-            p.update(board);
+            p.update(board, System.in);
         }
     }
 }
@@ -66,27 +68,26 @@ enum Direction {
 }
 
 class InputParser {
-    private Scanner in;
 
     public InputParser() {
     }
 
-    public Board init(int width, int height) {
-        in = new Scanner(System.in);
+    public Board init(int width, int height, InputStream inStream) {
+        Scanner in = new Scanner(inStream);
         int playerCount = in.nextInt();
         int us = in.nextInt();
         Board b = new Board(width, height, playerCount, us);
         boolean startup = true;
-        update(b, startup);
+        update(b, startup, in);
+        in = null;
         return b;
     }
 
-    public void update(Board current) {
-        if(!in.hasNext()) {
-            in = new Scanner(System.in);
-        }
+    public void update(Board current, InputStream inStream) {
         boolean startup = false;
-        update(current, startup);
+        Scanner sc = new Scanner(inStream);
+        update(current, startup, sc);
+        sc = null;
     }
 
     private class Input {
@@ -110,7 +111,7 @@ class InputParser {
         }
     }
 
-    public void update(Board current, boolean startup) {
+    public void update(Board current, boolean startup, Scanner in) {
         // On startup, the first two integer inputs have already been consumed. If not startup, throw them away.
         if (!startup) {
             // These are never used after startup.
@@ -1383,7 +1384,6 @@ class Voronoi implements Driver {
         Set<Direction> directions = connectedComponentChooser.filterBadMoves(board, allDirections);
         List<Integer> path = pathToBattle(board);
         if(backupEnabled || path.size() == 0) {
-            System.err.println("Backup enabled");
             backupEnabled = true;
             return backupDriver.move(board);
         }
@@ -1444,7 +1444,6 @@ abstract class TwoStageDriver implements Driver {
            playerCount = board.getAliveCount();
        }
        if(backupEnabled || isBackupEnabled(board)) {
-           System.err.println("Backup enabled");
            backupEnabled = true;
            bestMove = backupMove(board);
        } else {
@@ -1467,7 +1466,7 @@ abstract class TwoStageDriver implements Driver {
 
 // Reference Driver.
 class VoronoiMinMax extends TwoStageDriver {
-    private final int DEPTH = 7;
+    private final int DEPTH = 6;
     private MinMax.Score countAvailableSpaces = new MinMax.Score() {
         public int eval(Board b, int player) {
             int spaceCount;

@@ -34,6 +34,8 @@ public class Simulation {
                 for(int p2 = 0; p2 < p; p2++) {
                     if(initialPositions[p2].getX() == x && initialPositions[p2].getY() == y) {
                         conflicts = true;
+                    } else {
+                        conflicts = false;
                     }
                 }
             } while(conflicts);
@@ -47,7 +49,7 @@ public class Simulation {
 
     public GameResult run() {
         while(board.getAliveCount() > 1) {
-            for(int p = 0; p < players.size(); p++) {
+            for(int p = 0; p < players.size() && board.getAliveCount() > 1; p++) {
                 if (board.playerTile(p) == Board.DEAD) {
                     continue;
                 }
@@ -60,25 +62,24 @@ public class Simulation {
                         Future<Direction> future = executor.submit(() -> players.get(pTemp).next(message));
                         d = future.get(100, TimeUnit.MILLISECONDS);
                     } catch(TimeoutException e) {
-                        System.out.println(String.format("Player %d timed-out.", p));
                         markDead(p);
                         continue;
                     }
                     int tile = board.tileFrom(board.playerTile(p), d);
                     position = board.tileToPos(tile);
                     if(!board.isValid(position) || !board.isFree(tile)) {
-                        System.out.println(String.format("Player %d moved to invalid position.", p));
                         markDead(p);
                         continue;
                     }
                     board.move(p, position);
                 } catch(Exception e) {
-                    System.out.println(String.format("Exception from player %d: " + e.toString(), p));
                     markDead(p);
                     continue;
                 }
             }
         }
+        markDead(board.getAlivePlayers().get(0));
+        executor.shutdown();
         return result;
     }
 
