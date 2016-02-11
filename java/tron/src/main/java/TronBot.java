@@ -10,7 +10,8 @@ class Player {
         int width = 30;
         int height = 20;
 //        Driver driver = new DeadDriver();
-        Driver driver = new StaySafeDriver();
+//        Driver driver = new StaySafeDriver();
+          Driver driver = new AvoidPlayersDriver();
 //        Driver driver  = new WallHuggingDriver();
 //        Driver driver = new VoronoiMinMax();
         InputParser p = new InputParser();
@@ -1312,6 +1313,68 @@ class BruteForceEndGame implements Driver {
         }
         marked[tile] = false;
         return max;
+    }
+}
+
+
+class AvoidPlayersDriver implements Driver {
+    private StaySafeDriver backupDriver = new StaySafeDriver();
+    private Filter deadEndFilter = new AvoidSmallComponents();
+    private Filter avoidCutVerticesFilter = new AvoidCutVertices();
+
+    private boolean isOpponent(int tile, Board b) {
+        boolean isOpponent = b.getAlivePlayers().stream().filter(p-> p != b.US)
+                .map(p -> b.playerTile(p)).filter(t -> t == tile).findAny().isPresent();
+        return isOpponent;
+    }
+
+    @Override
+    public Direction move(Board board) {
+        int maxDistance = 0;
+        int minNeighbour = -1;
+        for(int startingPoint : board.freeNeighbours(board.ourTile())) {
+            int[] distances = new int[board.getSize()];
+            Queue<Integer> queue = new LinkedList<>();
+            queue.add(startingPoint);
+            distances[startingPoint] = 1;
+            boolean foundOpponent = false;
+            while(!queue.isEmpty() && !foundOpponent) {
+                int tile = queue.poll();
+                for (int n : board.neighbours(tile)) {
+                    int nDistance = distances[tile] + 1;
+                    if(isOpponent(tile, board)) {
+                        if (distances[tile] + 1 > maxDistance) {
+                            maxDistance = nDistance;
+                            minNeighbour = startingPoint;
+                        }
+                        foundOpponent = true;
+                        break;
+                    } else {
+                        if(board.isFree(tile)) {
+                            if (distances[n] == 0) {
+                                distances[n] = nDistance;
+                                queue.add(n);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Set<Direction> directions = new HashSet<>();
+        Direction d;
+        if(minNeighbour != -1) {
+            d = board.tileToPos(board.ourTile()).directionTo(board.tileToPos(minNeighbour));
+            directions.add(d);
+        }
+        // Do some basic filtering of clearly bad moves. Ideally the possible directions should be ordered by distance
+        // from enemy, and then the next furthest direction can be chosen instead of giving up and reverting to backup.
+        directions = avoidCutVerticesFilter.filterBadMoves(board, deadEndFilter.filterBadMoves(board, directions));
+        if(directions.isEmpty()) {
+            d = backupDriver.move(board);
+        } else {
+            d = directions.iterator().next();
+        }
+        return d;
     }
 }
 
