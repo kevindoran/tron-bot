@@ -1,4 +1,3 @@
-import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -11,9 +10,9 @@ class Player {
         int width = 30;
         int height = 20;
 //        Driver driver = new DeadDriver();
-//        Driver driver = new StaySafeDriver();
+        Driver driver = new StaySafeDriver();
 //        Driver driver  = new WallHuggingDriver();
-        Driver driver = new VoronoiMinMax();
+//        Driver driver = new VoronoiMinMax();
         InputParser p = new InputParser();
         Board board = p.init(width, height, System.in);
         while (true) {
@@ -79,7 +78,6 @@ class InputParser {
         Board b = new Board(width, height, playerCount, us);
         boolean startup = true;
         update(b, startup, in);
-        in = null;
         return b;
     }
 
@@ -87,7 +85,6 @@ class InputParser {
         boolean startup = false;
         Scanner sc = new Scanner(inStream);
         update(current, startup, sc);
-        sc = null;
     }
 
     private class Input {
@@ -265,7 +262,7 @@ class BoardUtil {
         }
     }
 
-    public static interface PositionFilter {
+    public interface PositionFilter {
         boolean isIncluded(int tile);
     }
     // Algorithm taken from
@@ -465,7 +462,7 @@ class BoardUtil {
             int total = 0;
             total += getPlayerTileCount(player);
             for(int p : borderingPlayers[player]) {
-                total += getPlayerTileCount(player);
+                total += getPlayerTileCount(p);
             }
             return total;
         }
@@ -517,7 +514,6 @@ class BoardUtil {
             private Chamber parent;
             private List<Chamber> children = new ArrayList<>();
             private static int nextId = 0;
-            private CheckerCount count;
 
             private Chamber() {}
 
@@ -553,10 +549,6 @@ class BoardUtil {
 
             public Chamber getParent() {
                 return parent;
-            }
-
-            public void setCount(CheckerCount count) {
-                this.count = count;
             }
         }
 
@@ -720,12 +712,11 @@ class BoardUtil {
                     else {
                         ccWhiteCount++;
                     }
-                    final int tempCCID = ccID;
                     for(int n : b.freeNeighbours(node)) {
                         if(outOfBounds[n] || connectedComponents[n] != 0) {
                             continue;
                         }
-                            connectedComponents[n] = tempCCID;
+                            connectedComponents[n] = ccID;
                             bfsQueue.add(n);
                     }
                 }
@@ -1008,8 +999,7 @@ class Board {
     }
 
     public boolean isValid(int x, int y) {
-        boolean isValid = x >= 0 && x < width && y >= 0 && y < height;
-        return isValid;
+        return x >= 0 && x < width && y >= 0 && y < height;
     }
 
     public boolean isValid(Position p) {
@@ -1070,12 +1060,6 @@ class Board {
             }
         }
         return neighbours;
-    }
-
-
-    private IntStream freeNeighbours(Position p) {
-        IntStream neighbours = neighbours(p.getX(), p.getY());
-        return neighbours.filter((i)->isFree(i));
     }
 
     public IntStream neighbours(int x, int y) {

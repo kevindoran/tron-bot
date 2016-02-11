@@ -13,17 +13,20 @@ public class Simulation {
     private Board board;
     private Position[] initialPositions;
     private ExecutorService executor = Executors.newSingleThreadExecutor();
-    private List<SimPlayer> players;
+    private List<SimPlayer> players = new ArrayList<>();
     private GameResult result;
 
-    public Simulation(int width, int height, List<SimPlayer> players) {
-        this.players = players;
+    public Simulation(int width, int height, List<SimulationRunner.SimPlayerFactory> playerFactories) {
+        for(SimulationRunner.SimPlayerFactory f : playerFactories) {
+            players.add(f.create());
+        }
         int playerCount = players.size();
         this.result = new GameResult(playerCount);
         Random rn = new Random();
         int us = 0;
         board = new Board(width, height, playerCount, us);
         initialPositions = new Position[playerCount];
+        initialPositions = new Position[] {new Position(12,3), new Position(1,2)};
         for(int p = 0; p < playerCount; p++) {
             int x;
             int y;
@@ -39,7 +42,8 @@ public class Simulation {
                     }
                 }
             } while(conflicts);
-            initialPositions[p] = new Position(x, y);
+            System.out.println(players.get(p).getName() + " (x,y) (" + x + "," + y + ")");
+//            initialPositions[p] = new Position(x, y);
             board.move(p, initialPositions[p]);
         }
         for(int p = 0; p < playerCount; p++) {
@@ -60,8 +64,9 @@ public class Simulation {
                     try {
                         final int pTemp = p;
                         Future<Direction> future = executor.submit(() -> players.get(pTemp).next(message));
-                        d = future.get(100, TimeUnit.MILLISECONDS);
+                        d = future.get(850, TimeUnit.MILLISECONDS);
                     } catch(TimeoutException e) {
+                        System.err.println("Received timeout for player " + players.get(p).getName());
                         markDead(p);
                         continue;
                     }

@@ -20,7 +20,7 @@ class SimPlayer {
 
     public void init(int width, int height, String message) {
         ByteArrayInputStream stream = new ByteArrayInputStream(message.getBytes(StandardCharsets.UTF_8));
-        board = parser.init(width, height, stream);
+        this.board = parser.init(width, height, stream);
         try {
             stream.close();
         } catch (IOException e) {
