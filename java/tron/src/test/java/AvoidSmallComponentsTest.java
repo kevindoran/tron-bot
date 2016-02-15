@@ -1,5 +1,6 @@
 import org.junit.Test;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
@@ -13,9 +14,21 @@ public class AvoidSmallComponentsTest {
 
     @Test
     public void testMove() {
+        String boardStr =
+                "x  1h x  x  x\n" +
+                "x  1  x  1  1\n" +
+                "x  1  1  x  1\n" +
+                "x  x  x  0h 0\n" +
+                "x  x  x  0  0\n";
+        Board b = Board.fromString(boardStr);
+        AvoidSmallComponents filter = new AvoidSmallComponents();
+        Set<Direction> filtered = filter.filterBadMoves(b, new HashSet<>(Arrays.asList(Direction.values())));
+        assertEquals(1, filtered.size());
+
+
         int width = 5;
         int height = 6;
-        Board b = new Board(width, height, 2, 0);
+        b = new Board(width, height, 2, 0);
         b.move(0, 0, 2);
         b.move(0, 1, 2);
         b.move(1, 4, 2);

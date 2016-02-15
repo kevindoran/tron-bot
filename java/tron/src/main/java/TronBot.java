@@ -11,9 +11,10 @@ class Player {
         int height = 20;
 //        Driver driver = new DeadDriver();
 //        Driver driver = new StaySafeDriver();
-          Driver driver = new AvoidPlayersDriver();
-//        Driver driver  = new WallHuggingDriver();
+//          Driver driver = new AvoidEnemyDriver();
+        Driver driver  = new WallHuggingDriver();
 //        Driver driver = new VoronoiMinMax();
+//        Driver driver = new VoronoiMaxN();
         InputParser p = new InputParser();
         Board board = p.init(width, height, System.in);
         while (true) {
@@ -1148,10 +1149,9 @@ class DeadDriver implements Driver {
     }
 }
 
-// Places around 700
-class StaySafeDriver implements Driver {
+class StaySafeDriver extends TwoStageDriver {
     @Override
-    public Direction move(Board board) {
+    public Direction mainMove(Board board) {
         // Choose a default in case there are no safe directions.
         Direction direction = Direction.LEFT;
         for (Direction d : Direction.values()) {
@@ -1168,6 +1168,7 @@ class StaySafeDriver implements Driver {
 }
 
 interface Filter {
+    // If there are no valid moves, the filter should not be applied and should return the input moves as is.
     Set<Direction> filterBadMoves(Board b, Set<Direction> moves);
 }
 
@@ -1202,9 +1203,13 @@ class AvoidCutVertices implements Filter {
             // are also filtered here.
             return tileToScores.containsKey(tile) && tileToScores.get(tile) == tempMax;
         }).collect(Collectors.toSet());
+        if(filtered.isEmpty()) {
+            return moves;
+        }
         return filtered;
     }
 }
+
 class AvoidSmallComponents implements Filter {
     @Override
     public Set<Direction> filterBadMoves(Board board, Set<Direction> moves) {
@@ -1215,7 +1220,7 @@ class AvoidSmallComponents implements Filter {
         int ccID = 1;
         Set<Integer> possibleNeighbours = moves.stream().map(
                 (m) -> board.tileFrom(board.ourTile(), m)).filter(
-                (tile) -> tile != -1).collect(Collectors.toSet());
+                (tile) -> tile != -1).filter(t-> board.isFree(t)).collect(Collectors.toSet());
         for(int i : possibleNeighbours) {
             if (board.isFree(i) && connectedComponents[i] == 0) {
                 Queue<Integer> queue = new LinkedList<>();
@@ -1242,16 +1247,19 @@ class AvoidSmallComponents implements Filter {
         }
         // Lambdas require variables to be declared final.
         final int maxSize = maxComponentSize;
-        moves = moves.stream().filter((e) ->  {
+        Set<Direction> filteredMoves = moves.stream().filter((e) -> {
             int toTile = board.tileFrom(board.ourTile(), e);
             // The tile is not on the board if toTile == -1.
-            if(toTile == -1) {
+            if (toTile == -1) {
                 return false;
             }
             boolean inLargestComponent = componentSize.get(connectedComponents[toTile]) == maxSize;
             return inLargestComponent;
         }).collect(Collectors.toSet());
-        return moves;
+        if(filteredMoves.isEmpty()) {
+            return moves;
+        }
+        return filteredMoves;
     }
 }
 
@@ -1317,10 +1325,10 @@ class BruteForceEndGame implements Driver {
 }
 
 
-class AvoidPlayersDriver implements Driver {
+class AvoidEnemyDriver extends TwoStageDriver {
     private StaySafeDriver backupDriver = new StaySafeDriver();
     private Filter deadEndFilter = new AvoidSmallComponents();
-    private Filter avoidCutVerticesFilter = new AvoidCutVertices();
+//    private Filter avoidCutVerticesFilter = new AvoidCutVertices();
 
     private boolean isOpponent(int tile, Board b) {
         boolean isOpponent = b.getAlivePlayers().stream().filter(p-> p != b.US)
@@ -1329,10 +1337,14 @@ class AvoidPlayersDriver implements Driver {
     }
 
     @Override
-    public Direction move(Board board) {
+    public Direction mainMove(Board board) {
+        Set<Direction> okayDirections = deadEndFilter.filterBadMoves(board,
+                new HashSet<>(Arrays.asList(Direction.values())));
+        Collection<Integer> filteredNeighbours = okayDirections.stream().map(
+                d -> board.tileFrom(board.ourTile(), d)).filter(t -> t != -1).collect(Collectors.toList());
         int maxDistance = 0;
         int minNeighbour = -1;
-        for(int startingPoint : board.freeNeighbours(board.ourTile())) {
+        for(int startingPoint : filteredNeighbours) {
             int[] distances = new int[board.getSize()];
             Queue<Integer> queue = new LinkedList<>();
             queue.add(startingPoint);
@@ -1360,49 +1372,20 @@ class AvoidPlayersDriver implements Driver {
                 }
             }
         }
-        Set<Direction> directions = new HashSet<>();
-        Direction d;
-        if(minNeighbour != -1) {
-            d = board.tileToPos(board.ourTile()).directionTo(board.tileToPos(minNeighbour));
-            directions.add(d);
-        }
-        // Do some basic filtering of clearly bad moves. Ideally the possible directions should be ordered by distance
-        // from enemy, and then the next furthest direction can be chosen instead of giving up and reverting to backup.
-        directions = avoidCutVerticesFilter.filterBadMoves(board, deadEndFilter.filterBadMoves(board, directions));
-        if(directions.isEmpty()) {
-            d = backupDriver.move(board);
-        } else {
-            d = directions.iterator().next();
-        }
+        Direction d = board.tileToPos(board.ourTile()).directionTo(board.tileToPos(minNeighbour));
         return d;
     }
 }
 
-class WallHuggingDriver implements Driver {
+class WallHuggingDriver extends TwoStageDriver {
     private StaySafeDriver backupDriver = new StaySafeDriver();
     private Filter deadEndFilter = new AvoidSmallComponents();
-    private Filter avoidCutVerticesFilter = new AvoidCutVertices();
+//    private Filter avoidCutVerticesFilter = new AvoidCutVertices();
     @Override
-    public Direction move(Board board) {
-        Set<Direction> okayDirections = avoidCutVerticesFilter.filterBadMoves(board,
+    public Direction mainMove(Board board) {
+        Set<Direction> okayDirections = deadEndFilter.filterBadMoves(board,
                 new HashSet<>(Arrays.asList(Direction.values())));
-        // If there are no options but to enter a cut vertex, choose the best component.
-        if(okayDirections.size() == 0) {
-            okayDirections = new HashSet<>(Arrays.asList(Direction.values()));
-        }
-        Set<Direction> okayDirections2 = deadEndFilter.filterBadMoves(board, new HashSet<>(Arrays.asList(Direction.values())));
-        okayDirections.retainAll(okayDirections2);
-        if(okayDirections.size() == 0) {
-            okayDirections = new HashSet<>(Arrays.asList(Direction.values()));
-            okayDirections = deadEndFilter.filterBadMoves(board, new HashSet<>(okayDirections));
-        }
-        if(okayDirections.size() == 0) {
-            okayDirections = new HashSet<>(Arrays.asList(Direction.values()));
-        }
-        for(Direction d : Direction.values()) {
-            if(!okayDirections.contains(d)) {
-                continue;
-            }
+        for(Direction d : okayDirections) {
             int tile = board.tileFrom(board.ourTile(), d);
             boolean isValid = tile != -1;
             if (isValid && board.isFree(tile)) {
@@ -1505,32 +1488,56 @@ abstract class TwoStageDriver implements Driver {
 
     protected Direction backupMove(Board b) {
         BruteForceEndGame bf = new BruteForceEndGame();
+//        WallHuggingDriver bf = new WallHuggingDriver();
         return bf.move(b);
     }
 
     protected abstract Direction mainMove(Board b);
 }
 
+class VoronoiMinMax7 extends VoronoiMinMax {
+    public VoronoiMinMax7() {
+        super.depth = 10;
+    }
+}
+
 // Reference Driver.
 class VoronoiMinMax extends TwoStageDriver {
-    private final int DEPTH = 6;
+    protected int depth = 6;
+
+    public VoronoiMinMax() {}
+
+    public VoronoiMinMax(int depth) {
+        this.depth = depth;
+    }
+
     private MinMax.Score countAvailableSpaces = new MinMax.Score() {
         public int eval(Board b, int player) {
             int spaceCount;
             BoardUtil.BoardZones bz = new BoardUtil.BoardZones(b, player);
             BoardUtil.AvailableSpace availableSpace = new BoardUtil.AvailableSpace(b, bz, b.US);
             spaceCount = availableSpace.getMaxMoves();
+//            spaceCount = bz.getPlayerTileCount(b.US);
             return spaceCount;
         }
     };
 
     protected Direction mainMove(Board board) {
-        return MinMax.minMax(board, countAvailableSpaces, DEPTH);
+        return MinMax.minMax(board, countAvailableSpaces, depth);
+    }
+}
+
+class VoronoiMaxN extends TwoStageDriver {
+    private final int DEPTH = 5;
+
+    @Override
+    protected Direction mainMove(Board b) {
+        return MaxN.maxN(b, new VoronoiScore(), DEPTH);
     }
 }
 
 
-class MaxNScore implements MaxN.Score {
+class RegressionScore implements MaxN.Score {
 
     @Override
     public MaxN.Result eval(Board b, int playersTurn) {
@@ -1540,6 +1547,19 @@ class MaxNScore implements MaxN.Score {
     @Override
     public MaxN.Result victoryResult(Board b, int playersTurn) {
         return new RegressionResult().victory(b, playersTurn);
+    }
+}
+
+class VoronoiScore implements MaxN.Score {
+
+    @Override
+    public MaxN.Result eval(Board b, int playersTurn) {
+        return new LazyResult(b, playersTurn);
+    }
+
+    @Override
+    public MaxN.Result victoryResult(Board b, int playersTurn) {
+        return new LazyResult().victory(b, playersTurn);
     }
 }
 
@@ -1607,8 +1627,8 @@ class LazyResult implements MaxN.Result {
     }
 
     protected int calculateScore(int player) {
-        int score = BoardUtil.score(board, bz, player);
-        return  score;
+        BoardUtil.AvailableSpace as = new BoardUtil.AvailableSpace(board, bz, player);
+        return  as.getMaxMoves();
     }
 }
 

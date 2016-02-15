@@ -17,14 +17,13 @@ public class SimulationRunner {
     private final Map<String, Class<? extends Driver>> drivers = new HashMap<>();
 
     public SimulationRunner() {
+        drivers.put("voronoiMaxN", VoronoiMaxN.class);
         drivers.put("voronoiMinMax", VoronoiMinMax.class);
         drivers.put("voronoi", Voronoi.class);
         drivers.put("wallHugging", WallHuggingDriver.class);
         drivers.put("staySafe", StaySafeDriver.class);
-        // chamberTreeMinMax
-        // voronoiNMax
-        // chamberTreeNMax
-        // Regression a,b,c,d etc
+        drivers.put("avoidEnemy", AvoidEnemyDriver.class);
+        drivers.put("voronoiMinMax7", VoronoiMinMax7.class);
     }
 
     private static class Arguments {
@@ -86,14 +85,14 @@ public class SimulationRunner {
     public void run(int gamesToPlay, String fileName, List<SimPlayerFactory> playerFactories) throws IOException {
         CSVWriter wr = new CSVWriter(new OutputStreamWriter(new FileOutputStream(fileName)));
         IntStream.range(0, gamesToPlay).forEach(i -> {
-//            Collections.shuffle(playerFactories);
+            Collections.shuffle(playerFactories);
             Simulation sim = new Simulation(BOARD_WIDTH, BOARD_HEIGHT, playerFactories);
             GameResult singleResult = sim.run();
             if (i == 0) {
                 wr.writeNext(singleResult.csvHeader());
             }
             wr.writeNext(singleResult.toArray());
-            System.out.println("Game no: " + i + "\n" + String.join(",", singleResult.toArray()));
+            System.out.println("Game no: " + i); //+ "\n" + String.join(",", singleResult.toArray()));
         });
         wr.close();
     }
