@@ -12,8 +12,8 @@ class Player {
 //        Driver driver = new DeadDriver();
 //        Driver driver = new StaySafeDriver();
 //          Driver driver = new AvoidEnemyDriver();
-        Driver driver  = new WallHuggingDriver();
-//        Driver driver = new VoronoiMinMax();
+//        Driver driver  = new WallHuggingDriver();
+        Driver driver = new VoronoiMinMax();
 //        Driver driver = new VoronoiMaxN();
         InputParser p = new InputParser();
         Board board = p.init(width, height, System.in);
@@ -1703,6 +1703,10 @@ class MaxN {
         }
         return max;
     }
+}
+
+class MinMaxStoredTree {
+
 }
 
 class MinMax {
