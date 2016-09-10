@@ -2,6 +2,7 @@ import java.util.Map;
 import java.util.TreeMap;
 
 class GameResult {
+    // TreeMap is used so that the entries maintain order.
     private TreeMap<String, Integer> playerPositions = new TreeMap<>();
     private final int playerCount;
 

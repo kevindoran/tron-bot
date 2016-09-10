@@ -3,6 +3,7 @@ import com.opencsv.CSVWriter;
 
 import java.io.*;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import com.beust.jcommander.Parameter;
@@ -84,9 +85,11 @@ public class SimulationRunner {
 
     public void run(int gamesToPlay, String fileName, List<SimPlayerFactory> playerFactories) throws IOException {
         CSVWriter wr = new CSVWriter(new OutputStreamWriter(new FileOutputStream(fileName)));
+        List<SimPlayer> simPlayers = playerFactories.stream().map(pf -> pf.create()).collect(Collectors
+                .toList());
         IntStream.range(0, gamesToPlay).forEach(i -> {
             Collections.shuffle(playerFactories);
-            Simulation sim = new Simulation(BOARD_WIDTH, BOARD_HEIGHT, playerFactories);
+            Simulation sim = new Simulation(BOARD_WIDTH, BOARD_HEIGHT, simPlayers);
             GameResult singleResult = sim.run();
             if (i == 0) {
                 wr.writeNext(singleResult.csvHeader());

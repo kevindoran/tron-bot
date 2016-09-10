@@ -13,13 +13,11 @@ public class Simulation {
     private Board board;
     private Position[] initialPositions;
     private ExecutorService executor = Executors.newSingleThreadExecutor();
-    private List<SimPlayer> players = new ArrayList<>();
+    private List<SimPlayer> players;
     private GameResult result;
 
-    public Simulation(int width, int height, List<SimulationRunner.SimPlayerFactory> playerFactories) {
-        for(SimulationRunner.SimPlayerFactory f : playerFactories) {
-            players.add(f.create());
-        }
+    public Simulation(int width, int height, List<SimPlayer> simPlayers) {
+        players = simPlayers;
         int playerCount = players.size();
         this.result = new GameResult(playerCount);
         Random rn = new Random();

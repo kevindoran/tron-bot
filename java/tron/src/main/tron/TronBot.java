@@ -349,63 +349,17 @@ class BoardUtil {
     }
 
 
-    public static int score(Board b, BoardZones bz, int forPlayer) {
-        int playerSpaceC = 1;
-        int playerEdgesC = 0;
-        int playerWideC = 0;
-        int noOfBorderingPlayersC = 0;
-        int noOfBackstabbing = -10;
-        int noOfPlayersC = 0;
-        // In reverse strength.
-        int enemySpaceC = 0;
-
-        int total = bz.getTotalAvailableSpace();
-        if(total == 0) {
-            // No space for anyone.
-            return 0;
-        }
-        int score = 0;
-        if(!b.isAlive(forPlayer)) {
-            score -= 100000000;
-        }
-//         AvailableSpace as = new AvailableSpace(b, bz, forPlayer);
-//         score += playerSpaceC * as.getMaxMoves();
-        int enemyCount = b.getAliveCount();
-        if(b.isAlive(forPlayer)) {
-            enemyCount--;
-        }
-        score += noOfPlayersC * enemyCount;
-//        score += playerSpaceC * bz.getPlayerTileCount(forPlayer);
-        score += playerEdgesC * bz.getEdgeCount(forPlayer);
-        score += playerWideC * bz.getSpaceIncNeighbourSpace(forPlayer);
-//        score += noOfBorderingPlayersC * bz.borderingPlayerCount(forPlayer);
-        score += noOfBackstabbing * bz.backstabbingPlayerCount(forPlayer);
-        int[] space = Arrays.copyOf(bz.playerTileCount, b.getPlayerCount());
-        int bss = 0;
-        for(int p = 0; p < b.getPlayerCount(); p++) {
-            if(p == forPlayer) {
-                //
-            } else {
-                if(bz.backstabbingPlayers[forPlayer].contains(p)) {
-                    bss+= bz.getPlayerTileCount(p);
-                }
-            }
-        }
-        score += (space[forPlayer] + bss) * playerSpaceC;
-        return score;
-    }
-
     /**
      * Calculates the space reachable by each player without crossing the battlefield. Faster than previous method
      * as it calculates the battlefield implicitly while counting spaces.
      */
     public  static class BoardZones {
-        private int[] playerTerritory;
-        private int[] playerTileCount;
-        private int[] playerEdgeCount;
-        private Set<Integer>[] borderingPlayers;
-        private int playerCount;
-        private Set<Integer>[] backstabbingPlayers;
+        int[] playerTerritory;
+        int[] playerTileCount;
+        int[] playerEdgeCount;
+        Set<Integer>[] borderingPlayers;
+        int playerCount;
+        Set<Integer>[] backstabbingPlayers;
 
         public BoardZones(Board b, int playersTurn) {
             playerCount = b.getPlayerCount();
@@ -1537,11 +1491,29 @@ class VoronoiMaxN extends TwoStageDriver {
 }
 
 
-class RegressionScore implements MaxN.Score {
+class RegressionMaxN extends TwoStageDriver {
+    private final int DEPTH = 5;
+    private ScoreFactors sf;
+
+    RegressionMaxN(ScoreFactors sf) {
+        this.sf = sf;
+    }
 
     @Override
+    protected Direction mainMove(Board b) {
+        return MaxN.maxN(b, new RegressionScore(sf), DEPTH);
+    }
+}
+
+class RegressionScore implements MaxN.Score {
+    ScoreFactors sf;
+
+    public RegressionScore(ScoreFactors sf) {
+        this.sf = sf;
+    }
+    @Override
     public MaxN.Result eval(Board b, int playersTurn) {
-        return new RegressionResult(b, playersTurn);
+        return new RegressionResult(b, playersTurn, sf);
     }
 
     @Override
@@ -1563,19 +1535,94 @@ class VoronoiScore implements MaxN.Score {
     }
 }
 
-class RegressionResult extends LazyResult {
+class ScoreFactors {
+    int playerSpace;
+    int playerEdges;
+    int sharedSpace;
+    int borderingPlayers;
+    int backstabbingPlayers;
+    int enemies;
+    int enemySpace;
+    int deathPenalty;//100000000
+}
 
-    private static final int MAX_FACTOR = 1000000000;
+class OnlineStat {
+    private double M2;
+    private int count;
+    private double mean;
 
-    public RegressionResult(Board b, int playersTurn) {
-        super(b, playersTurn);
+    public OnlineStat() {}
+
+    public void add(double value) {
+        count++;
+        double delta = value - mean;
+        mean += delta / count;
+        M2 += delta*(value - mean);
     }
 
+    public double sd() {
+        return Math.sqrt(M2 / (count-1));
+    }
+
+    public double mean() {
+        return mean;
+    }
+}
+
+class RegressionResult extends LazyResult {
+
+    public static OnlineStat playerSpaceStat = new OnlineStat();
+    public static OnlineStat playerEdgesStat = new OnlineStat();
+    public static OnlineStat sharedSpaceStat = new OnlineStat();
+    public static OnlineStat borderingPlayersStat = new OnlineStat();
+    public static OnlineStat backstabbingPlayersStat = new OnlineStat();
+    public static OnlineStat enemiesStat = new OnlineStat();
+    public static OnlineStat enemySpaceStat = new OnlineStat();
+
+    private static final int MAX_FACTOR = 1000000000;
+    private ScoreFactors sf;
+
+    public RegressionResult(Board b, int playersTurn, ScoreFactors sf) {
+        super(b, playersTurn);
+        this.sf = sf;
+    }
+
+    // Default available so that super.victory can be called cheaply.
     public RegressionResult() {}
 
     @Override
     protected int calculateScore(int player) {
-        return BoardUtil.score(board, bz, player);
+        int score = 0;
+        score += sf.playerSpace * bz.getPlayerTileCount(player);
+        score += sf.playerEdges * bz.getEdgeCount(player);
+        score += sf.sharedSpace * bz.getSpaceIncNeighbourSpace(player);
+        score += sf.borderingPlayers * bz.borderingPlayerCount(player);
+        score += sf.backstabbingPlayers * bz.backstabbingPlayerCount(player);
+        int enemyCount = board.getAliveCount();
+        if(board.isAlive(player)) {
+            enemyCount--;
+        }
+        score += sf.enemies * enemyCount;
+        double enemySpace = bz.getTotalAvailableSpace() -
+                bz.getPlayerTileCount(player);
+        score += sf.enemySpace * enemySpace;
+        if(!board.isAlive(player)) {
+            score -= sf.deathPenalty;
+        }
+        int total = bz.getTotalAvailableSpace();
+        if(total == 0) {
+            // No space for anyone.
+            return 0;
+        }
+        // Online stats
+//        playerSpaceStat.add(bz.getPlayerTileCount(player));
+//        playerEdgesStat.add(bz.getEdgeCount(player));
+//        sharedSpaceStat.add(bz.getSpaceIncNeighbourSpace(player));
+//        borderingPlayersStat.add(bz.borderingPlayerCount(player));
+//        backstabbingPlayersStat.add(bz.backstabbingPlayerCount(player));
+//        enemiesStat.add(enemyCount);
+//        enemySpaceStat.add(enemySpace);
+        return score;
     }
 
     @Override
